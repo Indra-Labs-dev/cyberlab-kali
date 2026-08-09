@@ -1,0 +1,102 @@
+name: cyberlab
+
+networks:
+  cyberlab-backend:
+    driver: bridge
+  cyberlab-kali-net:
+    driver: bridge
+
+volumes:
+  cyberlab-postgres-data:
+  cyberlab-redis-data:
+
+services:
+  cyberlab-postgres:
+    image: postgres:16-alpine
+    container_name: cyberlab-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-cyberlab}
+      POSTGRES_USER: ${POSTGRES_USER:-cyberlab}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-cyberlab}
+    volumes:
+      - cyberlab-postgres-data:/var/lib/postgresql/data
+    ports:
+      - "127.0.0.1:${POSTGRES_PORT:-55432}:5432"
+    networks:
+      - cyberlab-backend
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-cyberlab} -d ${POSTGRES_DB:-cyberlab}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    mem_limit: 512m
+    cpus: "1.0"
+
+  cyberlab-redis:
+    image: redis:7-alpine
+    container_name: cyberlab-redis
+    restart: unless-stopped
+    command: ["redis-server", "--save", "60", "1", "--appendonly", "yes"]
+    volumes:
+      - cyberlab-redis-data:/data
+    ports:
+      - "127.0.0.1:${REDIS_PORT:-63790}:6379"
+    networks:
+      - cyberlab-backend
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    mem_limit: 256m
+    cpus: "0.5"
+
+  cyberlab-api:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: cyberlab-api
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      POSTGRES_HOST: cyberlab-postgres
+      POSTGRES_PORT: 5432
+      REDIS_URL: redis://cyberlab-redis:6379/0
+      OLLAMA_URL: ${OLLAMA_URL:-http://host.docker.internal:11434}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3300}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    ports:
+      - "127.0.0.1:${API_PORT:-8300}:8000"
+    networks:
+      - cyberlab-backend
+      - cyberlab-kali-net
+    depends_on:
+      cyberlab-postgres:
+        condition: service_healthy
+      cyberlab-redis:
+        condition: service_healthy
+    mem_limit: 512m
+    cpus: "1.0"
+
+  cyberlab-frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      target: dev
+    container_name: cyberlab-frontend
+    restart: unless-stopped
+    environment:
+      NUXT_PUBLIC_API_BASE: http://localhost:${API_PORT:-8300}
+      NUXT_PUBLIC_WS_BASE: ws://localhost:${API_PORT:-8300}
+      NUXT_API_PROXY_TARGET: http://cyberlab-api:8000/api
+    ports:
+      - "127.0.0.1:${FRONTEND_PORT:-3300}:3000"
+    networks:
+      - cyberlab-backend
+    depends_on:
+      - cyberlab-api
+    mem_limit: 768m
+    cpus: "1.0"
