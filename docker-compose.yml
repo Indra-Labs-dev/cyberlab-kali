@@ -66,6 +66,8 @@ services:
       REDIS_URL: redis://cyberlab-redis:6379/0
       OLLAMA_URL: ${OLLAMA_URL:-http://host.docker.internal:11434}
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3300}
+      KALI_AGENT_URL: http://cyberlab-kali:9000
+      KALI_AGENT_TOKEN: ${KALI_AGENT_TOKEN:?KALI_AGENT_TOKEN must be set in .env}
     extra_hosts:
       - "host.docker.internal:host-gateway"
     ports:
@@ -78,6 +80,54 @@ services:
         condition: service_healthy
       cyberlab-redis:
         condition: service_healthy
+    mem_limit: 512m
+    cpus: "1.0"
+
+  cyberlab-worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: cyberlab-worker
+    restart: unless-stopped
+    command: ["python", "-m", "app.jobs.worker"]
+    healthcheck:
+      disable: true
+    env_file:
+      - .env
+    environment:
+      POSTGRES_HOST: cyberlab-postgres
+      POSTGRES_PORT: 5432
+      REDIS_URL: redis://cyberlab-redis:6379/0
+      KALI_AGENT_URL: http://cyberlab-kali:9000
+      KALI_AGENT_TOKEN: ${KALI_AGENT_TOKEN:?KALI_AGENT_TOKEN must be set in .env}
+    networks:
+      - cyberlab-backend
+      - cyberlab-kali-net
+    depends_on:
+      cyberlab-redis:
+        condition: service_healthy
+    mem_limit: 512m
+    cpus: "1.0"
+
+  cyberlab-kali:
+    build:
+      context: ./kali
+      dockerfile: Dockerfile
+    container_name: cyberlab-kali
+    restart: unless-stopped
+    environment:
+      AGENT_TOKEN: ${KALI_AGENT_TOKEN:?KALI_AGENT_TOKEN must be set in .env}
+    networks:
+      - cyberlab-kali-net
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
     mem_limit: 512m
     cpus: "1.0"
 

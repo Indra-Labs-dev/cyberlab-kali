@@ -24,7 +24,8 @@ class Settings(BaseSettings):
 
     cors_origins_raw: str = Field(default="http://localhost:3300", validation_alias="CORS_ORIGINS")
 
-    kali_host: str = "cyberlab-kali"
+    kali_agent_url: str = "http://cyberlab-kali:9000"
+    kali_agent_token: str = "change-me-in-production"
 
     @property
     def cors_origins(self) -> list[str]:

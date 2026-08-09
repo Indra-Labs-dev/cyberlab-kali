@@ -31,7 +31,7 @@ docker compose down
 
 ## État du projet
 
-Développement par phases (voir [CHANGELOG.md](CHANGELOG.md)). Phase actuelle : **Phase 1 — Foundation**.
+Développement par phases (voir [CHANGELOG.md](CHANGELOG.md)). Phase actuelle : **Phase 2 — Kali container + worker pipeline**.
 
 ## Documentation
 
