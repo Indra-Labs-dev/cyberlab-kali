@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased — Phase 5 — Dashboard UI (Nuxt)
+
+- Sidebar layout (`frontend/app/layouts/default.vue`) with the full navigation from the spec (Dashboard, Projects, Targets, Tools, Scans, Labs, Terminal, AI Assistant, Findings, Reports, Settings).
+- Dashboard (`/`): real system status tiles (API, DB, Kali, Ollama — no fake data), active jobs, recent scans. Backed by two new endpoints, `GET /api/health/kali` and `GET /api/health/ollama` (both proxy through the backend; the frontend never talks to the Kali agent or Ollama directly).
+- Tools (`/tools`): lists the Tool Registry and renders a form per tool generated from its argument definitions (target/url/string/boolean/choice), submits to `POST /api/jobs`, redirects to the scan detail page.
+- Scans (`/scans`, `/scans/[id]`): job list and a live detail view subscribed to `WS /api/ws/jobs/{id}` (`useJobSocket` composable) showing status, timestamps, parsed result, stdout/stderr, and a cancel button.
+- Targets, Projects, Labs, Terminal, AI Assistant, Findings, Reports pages exist and are navigable but show an explicit "not yet implemented" state (`ComingSoon` component) rather than fake/mock data, since their backend models don't exist yet.
+- Settings (`/settings`): shows the actual configured API/WS base URLs.
+- Verified in-browser end to end: ran an nmap job from the Tools form, watched it resolve to `SUCCESS` with a real parsed result on the scan detail page, and confirmed it appears in the Scans list. No console errors.
+
 ## Unreleased — Phase 4 — Job Engine (persistence + real-time updates)
 
 - Modèle `Job` (`backend/app/models/job.py`) : id, tool, target, params, status (`QUEUED`/`RUNNING`/`SUCCESS`/`FAILED`/`CANCELLED`), timestamps, stdout/stderr/exit_code/result/error. Migration Alembic générée et appliquée.
