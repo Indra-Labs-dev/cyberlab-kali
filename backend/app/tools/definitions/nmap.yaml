@@ -1,0 +1,42 @@
+name: nmap
+category: reconnaissance
+description: Network exploration and port/service scanning.
+command:
+  executable: nmap
+# -oX - forces machine-readable XML on stdout so the parser never has to
+# guess at nmap's human-readable text format; -sT avoids CAP_NET_RAW, which
+# the cyberlab-kali container intentionally does not have (see docs/security.md).
+fixed_args: ["-oX", "-", "-sT"]
+default_timeout: 60
+max_timeout: 240
+arguments:
+  - name: target
+    type: target
+    required: true
+    positional: true
+    description: Hostname, IP address, or CIDR range to scan.
+  - name: ports
+    type: string
+    flag: "-p"
+    required: false
+    pattern: '^[0-9,\-]{1,64}$'
+    description: Port list/range, e.g. "80,443" or "1-1024".
+  - name: service_detection
+    type: boolean
+    flag: "-sV"
+    default: false
+    description: Probe open ports for service/version info.
+  - name: default_scripts
+    type: boolean
+    flag: "-sC"
+    default: false
+    description: Run nmap's default NSE script set.
+  - name: timing
+    type: choice
+    flag: "-T"
+    choices: ["1", "2", "3", "4"]
+    required: false
+    description: Timing template (1=slow/stealthy .. 4=fast). T5 excluded as too aggressive for shared/lab networks.
+output:
+  format: xml
+  parser: nmap

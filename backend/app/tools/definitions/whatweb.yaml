@@ -1,0 +1,23 @@
+name: whatweb
+category: reconnaissance
+description: Web technology fingerprinting.
+command:
+  executable: whatweb
+fixed_args: ["--log-json=-", "--no-errors"]
+default_timeout: 45
+max_timeout: 120
+arguments:
+  - name: target
+    type: url
+    required: true
+    positional: true
+    description: URL or hostname to fingerprint.
+  - name: aggression
+    type: choice
+    flag: "-a"
+    choices: ["1", "3"]
+    required: false
+    description: Aggression level (1=passive/stealthy, 3=aggressive). Level 4 excluded as unsafe for shared targets.
+output:
+  format: json
+  parser: whatweb

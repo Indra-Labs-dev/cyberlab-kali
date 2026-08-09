@@ -1,0 +1,22 @@
+name: nikto
+category: vulnerability_scan
+description: Web server vulnerability scanner.
+command:
+  executable: nikto
+fixed_args: ["-Format", "txt", "-output", "-"]
+default_timeout: 120
+max_timeout: 300
+arguments:
+  - name: target
+    type: url
+    required: true
+    flag: "-h"
+    description: URL or hostname to scan.
+  - name: ssl
+    type: boolean
+    flag: "-ssl"
+    default: false
+    description: Force SSL/TLS mode.
+output:
+  format: text
+  parser: nikto
