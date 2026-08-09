@@ -31,12 +31,13 @@ docker compose down
 
 ## État du projet
 
-Développement par phases (voir [CHANGELOG.md](CHANGELOG.md)). Phase actuelle : **Phase 3 — Tool Registry + parsers**.
+Développement par phases (voir [CHANGELOG.md](CHANGELOG.md)). Phase actuelle : **Phase 4 — Job Engine (RQ + Redis + WebSocket)**.
 
 ## Documentation
 
 - [Architecture](docs/architecture.md)
 - [Développement](docs/development.md)
 - [Docker](docs/docker.md)
+- [API](docs/api.md)
 - [Outils](docs/tools.md)
 - [Sécurité](docs/security.md)

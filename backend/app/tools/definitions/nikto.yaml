@@ -3,7 +3,11 @@ category: vulnerability_scan
 description: Web server vulnerability scanner.
 command:
   executable: nikto
-fixed_args: ["-Format", "txt", "-output", "-"]
+# No -output flag: nikto writes plain text to stdout by default. Passing
+# "-output -" makes nikto treat "-" as a filename and append ".txt" to it,
+# which fails ("Unable to open '-.txt' for write") — discovered in Phase 4
+# end-to-end testing.
+fixed_args: []
 default_timeout: 120
 max_timeout: 300
 arguments:

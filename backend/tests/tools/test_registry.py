@@ -58,7 +58,7 @@ def test_build_command_rejects_invalid_choice():
 
 def test_build_command_nikto_uses_flag_not_positional():
     args = registry.build_command("nikto", {"target": "http://10.0.0.1"})
-    assert args == ["-Format", "txt", "-output", "-", "-h", "http://10.0.0.1"]
+    assert args == ["-h", "http://10.0.0.1"]
 
 
 def test_build_command_whatweb():

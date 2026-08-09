@@ -1,4 +1,9 @@
-from app.jobs.kali_client import run_tool
+from datetime import datetime, timezone
+
+from app.db.sync_session import get_sync_session
+from app.jobs.kali_client import KaliAgentError, run_tool
+from app.jobs.pubsub import publish_job_update
+from app.models.job import Job, JobStatus
 from app.tools import registry
 from app.tools.parsers import parse_output
 
@@ -9,9 +14,9 @@ def run_tool_job(tool: str, args: list[str], timeout: int = 60) -> dict:
 
 
 def run_registered_tool_job(tool_name: str, params: dict, timeout: int | None = None) -> dict:
-    """Executed by the RQ worker: validates `params` against the Tool Registry
-    definition for `tool_name`, runs it via the Kali agent, and parses stdout
-    into a normalized result.
+    """Validates `params` against the Tool Registry, runs the tool via the Kali
+    agent, and parses stdout into a normalized result. Used directly for
+    ad-hoc/manual runs; execute_job() wraps this with DB persistence.
     """
     tool = registry.get_tool(tool_name)
     args = registry.build_command(tool_name, params)
@@ -20,3 +25,67 @@ def run_registered_tool_job(tool_name: str, params: dict, timeout: int | None = 
     raw = run_tool(tool_name, args, timeout=effective_timeout)
     raw["parsed"] = parse_output(tool.output.parser, raw.get("stdout", ""))
     return raw
+
+
+def _now() -> datetime:
+    return datetime.now(timezone.utc)
+
+
+def execute_job(job_id: str, tool_name: str, params: dict, timeout: int | None = None) -> None:
+    """RQ entrypoint for API-submitted jobs: persists status transitions to
+    PostgreSQL and broadcasts each transition over Redis pub/sub so the
+    WebSocket layer can push live updates to the frontend.
+    """
+    session = get_sync_session()
+    try:
+        job = session.get(Job, job_id)
+        if job is None or job.status == JobStatus.CANCELLED:
+            # Cancelled before the worker even picked it up off the queue.
+            return
+
+        job.status = JobStatus.RUNNING
+        job.started_at = _now()
+        session.commit()
+        publish_job_update(job_id, {"id": job_id, "status": JobStatus.RUNNING.value})
+
+        try:
+            tool = registry.get_tool(tool_name)
+            args = registry.build_command(tool_name, params)
+            effective_timeout = min(timeout or tool.default_timeout, tool.max_timeout)
+            raw = run_tool(tool_name, args, timeout=effective_timeout)
+            parsed = parse_output(tool.output.parser, raw.get("stdout", ""))
+
+            # A concurrent cancel request may have committed CANCELLED while
+            # the tool was running; re-read before overwriting the terminal
+            # status so a cancellation can never be clobbered by a late result.
+            session.refresh(job)
+            if job.status == JobStatus.CANCELLED:
+                return
+
+            job.stdout = raw.get("stdout")
+            job.stderr = raw.get("stderr")
+            job.exit_code = raw.get("exit_code")
+            job.result = parsed
+            job.status = JobStatus.SUCCESS if raw.get("exit_code") == 0 else JobStatus.FAILED
+            job.finished_at = _now()
+            session.commit()
+            publish_job_update(
+                job_id,
+                {
+                    "id": job_id,
+                    "status": job.status.value,
+                    "exit_code": job.exit_code,
+                    "result": job.result,
+                },
+            )
+        except (registry.ToolValidationError, registry.ToolNotFoundError, KaliAgentError) as exc:
+            session.refresh(job)
+            if job.status == JobStatus.CANCELLED:
+                return
+            job.status = JobStatus.FAILED
+            job.error = str(exc)
+            job.finished_at = _now()
+            session.commit()
+            publish_job_update(job_id, {"id": job_id, "status": JobStatus.FAILED.value, "error": str(exc)})
+    finally:
+        session.close()
