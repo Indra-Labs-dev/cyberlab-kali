@@ -1,11 +1,17 @@
+import asyncio
+import fcntl
+import json
 import os
+import pty
 import re
 import shutil
+import struct
 import subprocess
+import termios
 import time
 from typing import Literal
 
-from fastapi import FastAPI, Header, HTTPException
+from fastapi import FastAPI, Header, HTTPException, Query, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel, Field
 
 app = FastAPI(title="CyberLab Kali Agent")
@@ -56,6 +62,13 @@ def _require_auth(x_agent_token: str | None) -> None:
         raise HTTPException(status_code=401, detail="invalid or missing agent token")
 
 
+SHELL = shutil.which("bash") or shutil.which("sh") or "/bin/sh"
+
+
+def _set_winsize(fd: int, rows: int, cols: int) -> None:
+    fcntl.ioctl(fd, termios.TIOCSWINSZ, struct.pack("HHHH", rows, cols, 0, 0))
+
+
 @app.get("/health")
 async def health() -> dict:
     return {"status": "ok", "tools_available": sorted(ALLOWED_TOOLS.keys())}
@@ -99,3 +112,70 @@ async def exec_tool(request: ExecRequest, x_agent_token: str | None = Header(def
         duration_ms=duration_ms,
         timed_out=timed_out,
     )
+
+
+@app.websocket("/terminal")
+async def terminal_ws(websocket: WebSocket, token: str = Query(default="")) -> None:
+    if not AGENT_TOKEN or token != AGENT_TOKEN:
+        await websocket.close(code=4401)
+        return
+    await websocket.accept()
+
+    master_fd, slave_fd = pty.openpty()
+    _set_winsize(master_fd, 24, 80)
+    proc = subprocess.Popen(
+        [SHELL],
+        stdin=slave_fd,
+        stdout=slave_fd,
+        stderr=slave_fd,
+        preexec_fn=os.setsid,
+        cwd=os.path.expanduser("~"),
+        env={**os.environ, "TERM": "xterm-256color"},
+    )
+    os.close(slave_fd)
+
+    loop = asyncio.get_event_loop()
+    output_queue: asyncio.Queue[bytes | None] = asyncio.Queue()
+
+    def on_readable() -> None:
+        try:
+            data = os.read(master_fd, 4096)
+        except OSError:
+            data = b""
+        output_queue.put_nowait(data or None)
+
+    loop.add_reader(master_fd, on_readable)
+
+    async def pty_to_ws() -> None:
+        while True:
+            data = await output_queue.get()
+            if data is None:
+                break
+            await websocket.send_text(json.dumps({"type": "stdout", "data": data.decode(errors="replace")}))
+
+    async def ws_to_pty() -> None:
+        while True:
+            text = await websocket.receive_text()
+            try:
+                message = json.loads(text)
+            except json.JSONDecodeError:
+                continue
+            if message.get("type") == "stdin":
+                os.write(master_fd, message.get("data", "").encode())
+            elif message.get("type") == "resize":
+                _set_winsize(master_fd, int(message.get("rows", 24)), int(message.get("cols", 80)))
+
+    try:
+        await asyncio.gather(pty_to_ws(), ws_to_pty())
+    except WebSocketDisconnect:
+        pass
+    finally:
+        loop.remove_reader(master_fd)
+        try:
+            os.close(master_fd)
+        except OSError:
+            pass
+        proc.terminate()
+        # Reap the child so it doesn't linger as a zombie — terminate() alone
+        # only sends SIGTERM, it doesn't wait for the process table entry to clear.
+        await loop.run_in_executor(None, proc.wait)

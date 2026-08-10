@@ -31,7 +31,7 @@ docker compose down
 
 ## État du projet
 
-Développement par phases (voir [CHANGELOG.md](CHANGELOG.md)). Phase actuelle : **Phase 5 — Dashboard UI (Nuxt)**.
+Développement par phases (voir [CHANGELOG.md](CHANGELOG.md)). Phase actuelle : **Phase 6 — Terminal intégré**.
 
 ## Documentation
 

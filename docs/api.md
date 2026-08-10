@@ -39,3 +39,4 @@ Annuler un job `RUNNING` envoie une demande d'arrêt best-effort au worker (`rq.
 ## Temps réel
 
 - `WS /api/ws/jobs/{job_id}` — un message JSON par transition de statut (`{"id", "status", ...}`), diffusé via Redis pub/sub par le worker au fur et à mesure de l'exécution.
+- `WS /api/ws/terminal` — relais transparent vers un shell interactif (PTY) confiné au conteneur `cyberlab-kali`. Protocole JSON dans les deux sens : `{"type": "stdin", "data": "..."}` / `{"type": "resize", "rows": N, "cols": M}` en entrée, `{"type": "stdout", "data": "..."}` en sortie. Voir [security.md](security.md) — c'est la surface la plus privilégiée de l'application (shell complet, pas d'allowlist).

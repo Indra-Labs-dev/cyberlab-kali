@@ -1,5 +1,17 @@
 # Changelog
 
+## Unreleased — Phase 6 — Integrated terminal
+
+- Kali agent (`kali/agent/main.py`) gains a `WS /terminal` endpoint: opens a real PTY (`pty.openpty()` + `bash` via `subprocess.Popen(preexec_fn=os.setsid)`), relays stdin/stdout/resize as JSON frames, authenticated with the same shared `KALI_AGENT_TOKEN` as tool execution.
+- `cyberlab-api` gains `WS /api/ws/terminal` (`backend/app/api/routes/terminal.py`): a transparent byte-relay between the browser and the Kali agent's terminal socket — the API never opens a shell itself, keeping the PTY confined to the isolated Kali container with no `docker.sock` involved.
+- Frontend `/terminal` page: xterm.js + `@xterm/addon-fit`, SSR disabled for this route (xterm references browser globals), dynamic import to keep it fully client-side.
+- Bugs found and fixed during end-to-end testing:
+  - `onUnmounted` was being registered after an `await` inside `onMounted`, which breaks Vue's lifecycle-hook tracking — cleanup (closing the socket/PTY) silently never ran. Fixed by declaring cleanup state at top-level scope and registering `onUnmounted` synchronously.
+  - The Kali agent called `proc.terminate()` on disconnect but never `proc.wait()`, leaving `bash <defunct>` zombie processes in the container after every terminal session. Fixed with `await loop.run_in_executor(None, proc.wait)`.
+- New tests (`kali/agent/tests/test_terminal_auth.py`): missing token, wrong token, and agent started without `AGENT_TOKEN` configured all reject the WebSocket with `close(code=4401)` — no silent fallback to "auth disabled" for the app's most privileged endpoint.
+- Verified end-to-end: connected from the actual browser UI, ran real commands (`echo`, `nmap --version`) inside the Kali container's shell and saw live output; confirmed no zombie processes remain after disconnecting.
+- `docs/security.md` updated with a dedicated section flagging the terminal as the highest-privilege surface in the app (full shell, no allowlist) and the hard requirement for user auth before any exposure beyond `localhost`.
+
 ## Unreleased — Phase 5 — Dashboard UI (Nuxt)
 
 - Sidebar layout (`frontend/app/layouts/default.vue`) with the full navigation from the spec (Dashboard, Projects, Targets, Tools, Scans, Labs, Terminal, AI Assistant, Findings, Reports, Settings).
