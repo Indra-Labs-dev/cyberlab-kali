@@ -1,0 +1,30 @@
+name: wafw00f
+category: web_recon
+description: Web Application Firewall (WAF) fingerprinting.
+risk_level: SAFE
+ai_allowed: true
+command:
+  executable: wafw00f
+arguments:
+  - name: target
+    type: url
+    required: true
+    positional: true
+    description: URL to check for a WAF.
+  - name: find_all
+    type: boolean
+    flag: "-a"
+    default: false
+    description: Keep probing after the first WAF match to find all matching signatures.
+output:
+  format: text
+  parser: none
+profiles:
+  - name: detect_waf
+    description: Stop at the first WAF match.
+    args: {}
+    timeout: 30
+  - name: detect_all
+    description: Find every matching WAF signature, not just the first.
+    args: {find_all: true}
+    timeout: 45

@@ -1,0 +1,46 @@
+name: testssl
+category: ssl_tls
+description: Broader TLS/SSL/vulnerability checker (testssl.sh) than sslscan -- also flags known TLS vulnerabilities (e.g. Heartbleed).
+risk_level: CAUTION
+ai_allowed: true
+command:
+  executable: testssl.sh
+# --fast trims the check set so this stays within the job timeout budget;
+# a truly exhaustive testssl.sh run can take 10+ minutes, well past what
+# this container's agent allows (300s hard cap).
+fixed_args: ["--color", "0", "--quiet", "--fast"]
+arguments:
+  - name: target
+    type: target
+    required: true
+    positional: true
+    description: Host, or host:port (defaults to 443).
+  - name: protocols
+    type: boolean
+    flag: "-p"
+    default: false
+    description: Check supported TLS/SSL protocol versions.
+  - name: cert_info
+    type: boolean
+    flag: "-S"
+    default: false
+    description: Show server/certificate details.
+  - name: vulnerabilities
+    type: boolean
+    flag: "-U"
+    default: false
+    description: Check for known TLS vulnerabilities (Heartbleed, POODLE, etc).
+output:
+  format: text
+  parser: none
+max_timeout: 280
+profiles:
+  - name: quick_check
+    description: Protocol versions + certificate info.
+    args: {protocols: true, cert_info: true}
+    timeout: 120
+  - name: vulnerability_check
+    description: Known-vulnerability checks only.
+    args: {vulnerabilities: true}
+    timeout: 180
+    risk_level: RESTRICTED

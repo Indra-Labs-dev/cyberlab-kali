@@ -1,0 +1,22 @@
+name: sslscan
+category: ssl_tls
+description: TLS/SSL configuration and cipher scanner.
+risk_level: SAFE
+ai_allowed: true
+command:
+  executable: sslscan
+fixed_args: ["--xml=-"]
+arguments:
+  - name: target
+    type: target
+    required: true
+    positional: true
+    description: Host, or host:port (defaults to 443).
+output:
+  format: xml
+  parser: sslscan
+profiles:
+  - name: full_scan
+    description: Full cipher/protocol/certificate scan.
+    args: {}
+    timeout: 60

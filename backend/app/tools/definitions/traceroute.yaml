@@ -1,0 +1,28 @@
+name: traceroute
+category: dns_network
+description: Trace the network path to a host.
+risk_level: CAUTION
+ai_allowed: true
+command:
+  executable: traceroute
+arguments:
+  - name: target
+    type: target
+    required: true
+    positional: true
+    description: Hostname or IP to trace.
+  - name: max_hops
+    type: integer
+    flag: "-m"
+    required: false
+    min_value: 1
+    max_value: 30
+    description: Maximum number of hops before giving up.
+output:
+  format: text
+  parser: none
+profiles:
+  - name: default_trace
+    description: Trace the route with default hop limit.
+    args: {max_hops: 30}
+    timeout: 30

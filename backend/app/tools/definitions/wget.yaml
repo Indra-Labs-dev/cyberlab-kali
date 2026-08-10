@@ -1,0 +1,25 @@
+name: wget
+category: utilities
+description: >-
+  Resource-availability check (spider mode only -- never actually downloads
+  or writes a file, so this can't be used to fill disk or pull arbitrary
+  content into the container).
+risk_level: SAFE
+ai_allowed: true
+command:
+  executable: wget
+fixed_args: ["--spider", "-S", "-T", "10"]
+arguments:
+  - name: target
+    type: url
+    required: true
+    positional: true
+    description: URL to check.
+output:
+  format: text
+  parser: none
+profiles:
+  - name: check_availability
+    description: Confirm the resource exists and show response headers, without downloading it.
+    args: {}
+    timeout: 15

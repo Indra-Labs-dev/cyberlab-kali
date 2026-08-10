@@ -1,0 +1,30 @@
+name: theharvester
+category: osint
+description: Passive OSINT harvesting of subdomains/hosts from public sources (certificate transparency, search engines).
+risk_level: SAFE
+ai_allowed: true
+command:
+  executable: theHarvester
+arguments:
+  - name: target
+    type: target
+    required: true
+    flag: "-d"
+    description: Domain to harvest information about.
+  # Restricted to sources that work without any API key configured --
+  # excludes shodan/hunter/etc, which would silently no-op or error anyway.
+  - name: source
+    type: choice
+    flag: "-b"
+    choices: ["crtsh", "otx", "anubis", "duckduckgo", "rapiddns"]
+    required: false
+    default: "crtsh"
+    description: OSINT source to query.
+output:
+  format: text
+  parser: none
+profiles:
+  - name: passive_recon
+    description: Certificate-transparency-based passive subdomain discovery.
+    args: {source: "crtsh"}
+    timeout: 60

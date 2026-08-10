@@ -1,0 +1,40 @@
+name: rpcclient
+category: enumeration
+description: >-
+  Single-query MS-RPC enumeration over a null session. Only a closed set of
+  known-safe, read-only sub-commands is reachable (via the `query` choice
+  below) -- rpcclient's interactive shell supports many more commands, but
+  none of the destructive/write ones are exposed here.
+risk_level: CAUTION
+ai_allowed: true
+command:
+  executable: rpcclient
+fixed_args: ["-U", "", "-N"]
+arguments:
+  - name: query
+    type: choice
+    flag: "-c"
+    choices: ["srvinfo", "enumdomusers", "enumdomgroups", "querydominfo"]
+    required: true
+    description: Read-only RPC query to run.
+  - name: target
+    type: target
+    required: true
+    positional: true
+    description: Host to query.
+output:
+  format: text
+  parser: none
+profiles:
+  - name: server_info
+    description: Basic server info.
+    args: {query: "srvinfo"}
+    timeout: 20
+  - name: enum_users
+    description: Enumerate domain users.
+    args: {query: "enumdomusers"}
+    timeout: 30
+  - name: enum_groups
+    description: Enumerate domain groups.
+    args: {query: "enumdomgroups"}
+    timeout: 30

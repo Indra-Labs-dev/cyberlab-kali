@@ -1,0 +1,26 @@
+name: enum4linux
+category: enumeration
+description: SMB/Samba/Windows enumeration (users, shares, groups, policy).
+risk_level: CAUTION
+ai_allowed: true
+command:
+  executable: enum4linux
+arguments:
+  - name: target
+    type: target
+    required: true
+    positional: true
+    description: Host to enumerate.
+  - name: all_simple_checks
+    type: boolean
+    flag: "-a"
+    default: true
+    description: Run all simple enumeration checks (users, shares, groups, policy, OS info).
+output:
+  format: text
+  parser: none
+profiles:
+  - name: basic_enum
+    description: All simple, non-intrusive enumeration checks.
+    args: {all_simple_checks: true}
+    timeout: 90

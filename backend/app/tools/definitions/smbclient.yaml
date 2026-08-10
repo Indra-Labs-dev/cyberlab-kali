@@ -1,0 +1,22 @@
+name: smbclient
+category: enumeration
+description: SMB share listing (null/anonymous session).
+risk_level: SAFE
+ai_allowed: true
+command:
+  executable: smbclient
+fixed_args: ["-N"]
+arguments:
+  - name: target
+    type: target
+    required: true
+    flag: "-L"
+    description: Host to list SMB shares on.
+output:
+  format: text
+  parser: none
+profiles:
+  - name: list_shares
+    description: List available SMB shares via a null session.
+    args: {}
+    timeout: 30

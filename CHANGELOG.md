@@ -1,5 +1,119 @@
 # Changelog
 
+## Unreleased — Phase 12 — Tool Registry expansion (31 tools)
+
+- **Tool Registry grew from 3 tools to 31**, curated category by category
+  (reconnaissance, DNS/network, web recon, web security, SSL/TLS,
+  enumeration, vulnerability, OSINT, utilities) — not a Kali package dump.
+  Every tool was verified actually installed (`which` inside the real
+  container, not assumed) before being registered; apt package names were
+  independently verified against a fresh `kalilinux/kali-rolling` pull
+  (`bind9-dnsutils` for dig/host/nslookup, not the no-longer-existing
+  `dnsutils`). `hydra`/`john`/`hashcat` were evaluated and deliberately
+  **not** installed — neither fits the target_id-centric Job Engine model
+  (offline hash files, or genuine brute-force amplification risk); `lynis`
+  and `jq` are installed but intentionally **not registered** — both lack
+  any real "network target" concept (lynis audits its own host, jq reads
+  stdin) — all documented in [docs/tools.md](docs/tools.md) rather than
+  silently omitted.
+- **Tool Registry schema gained `profiles` and `ai_allowed`**
+  (`backend/app/tools/schema.py`): a profile is a named, curated preset of
+  argument values (e.g. nmap's `quick_scan`, `vulnerability_nse`) that
+  `registry.build_command()` merges as defaults under the exact same
+  per-argument validation as manually-typed options — a profile can never
+  smuggle in a value the validator would otherwise reject. `ai_allowed`
+  gates whether the AI Mission Planner may ever propose a tool at all. New
+  `MANUAL_ONLY` risk tier (`sqlmap`) whose schema-level validator forces
+  `ai_allowed: false` — impossible to define a `MANUAL_ONLY` tool the AI can
+  reach, enforced at registry load time, not just convention.
+- **`ai_allowed` enforced at two independent layers**
+  (`backend/app/ai/planner.py`): non-`ai_allowed` tools are filtered out of
+  the tool list *before* the prompt is even built (the model is never told
+  they exist), and any proposed step is re-validated against the same
+  allowlist afterward — proven with an adversarial test where a fake
+  provider proposes `sqlmap` by name (a real registered tool, not a
+  hallucination like `bash`) and the step is still stripped.
+  `sqlmap.yaml` itself only exposes detection + database-name enumeration;
+  `--dump`/`--os-shell`/`--sql-shell` are never declared as arguments, so
+  they're structurally unreachable through this API regardless of caller.
+- **`CAP_NET_RAW`** added to `cyberlab-kali` (`docker-compose.yml`) — a
+  narrow addition on top of `cap_drop: ALL`, not a reversal of it — because
+  `masscan` (raw SYN) and `traceroute` have no unprivileged mode, unlike
+  nmap's existing `-sT`.
+- **Tool Health** (`GET /api/tools/health`): non-destructive per-tool
+  `--version`/`--help` probe (never a real scan), run in parallel across all
+  31 tools (`kali/agent/main.py::_check_tool_health` +
+  `asyncio.gather`/`run_in_executor`, ~5s total) — surfaced on the new
+  `/tools` page as ✓ ready / ✕ broken / ⚠ not installed.
+- **Frontend `/tools` fully rebuilt**: search, category/risk/AI filters,
+  Tool Arsenal stat tiles, per-tool card with profile picker + target
+  picker (existing Target dropdown or free text) replacing the old flat
+  3-tool accordion. Dashboard gained a Tool Arsenal widget (installed/
+  AI-enabled/manual-only counts + per-category breakdown).
+- **AI Mission Planner now proposes tool+profile pairs**, not just raw
+  options (`MissionStep.profile`, revalidated against the tool's actual
+  profiles the same way `tool` itself is).
+- 9 parsers total (masscan, gobuster, nuclei, sslscan, searchsploit added to
+  the existing nmap/whatweb/nikto), each with a matching finding extractor;
+  nuclei is the only extractor that trusts the tool's own severity rating
+  rather than recomputing a conservative one, since nuclei templates already
+  carry a community-reviewed rating, not a CyberLab heuristic guess. The
+  other 22 tools expose raw output (`parser: none`), explicitly marked as
+  such rather than faking normalization.
+- **Four real bugs found via end-to-end testing against a real external
+  target** (`scanme.nmap.org` — prior phases mostly tested against the local
+  DVWA lab, which never exercised these paths):
+  - `whatweb` could exit 1 (job marked `FAILED`, findings never extracted)
+    despite a fully successful scan — a Ruby logger race between its
+    default console logger and `--log-json=-` when both write to stdout.
+    Fixed with `-q`.
+  - `gobuster`/`ffuf` referenced a wordlist path that doesn't exist
+    (`/usr/share/wordlists/dirb/` — the real path is `/usr/share/dirb/
+    wordlists/`, reversed). Fixed in both YAML definitions.
+  - `nikto` could stall until its job timeout without ever scanning: it
+    phones home for a plugin-update check on every run by default, which
+    can be rejected (403 observed); found no route to actually start the
+    scan. Fixed with `-nocheck`; `basic_web_scan`'s timeout also raised from
+    120s to 280s — nikto's full check set genuinely takes longer against a
+    real Internet target than a local lab container, not a bug to hide.
+  - **Kali agent crash on timeout** (`TypeError: can't concat str to
+    bytes`): `subprocess.TimeoutExpired.stdout`/`.stderr` can come back as
+    `bytes` even with `text=True`, and the handler did `bytes + str`,
+    returning an opaque `500` instead of a clean timeout report. Fixed with
+    defensive `bytes`→`str` coercion; regression test added
+    (`kali/agent/tests/test_exec_timeout.py`).
+  - A fifth, more serious bug surfaced while retesting the nikto fix: **RQ's
+    own `job_timeout` defaults to 180s independently of the tool's own
+    timeout budget**, silently killing the RQ job before a longer tool
+    timeout (nikto's new 280s) ever got a chance to fire — and since
+    `execute_job()` only caught three specific exception types, RQ's
+    `JobTimeoutException` propagated uncaught, leaving the job's DB row
+    stuck at `RUNNING` forever with no failure ever recorded. Fixed by
+    passing `job_timeout=effective_timeout + 30` to `queue.enqueue()`
+    (`backend/app/api/routes/jobs.py`), and — as defense in depth —
+    `execute_job()` now has a catch-all handler that resolves *any*
+    unexpected exception to `FAILED` with a message before re-raising, so a
+    stuck-forever job can't happen again even from a cause nobody's hit yet.
+  - A sixth, cosmetic-but-real bug: verifying the RQ fix through the actual
+    AI Mission Planner "Run" button (not just curl) surfaced that
+    `JobResponse` never declared a `profile` field at all -- a job created
+    with a profile was correctly persisted (`jobs.profile` in Postgres had
+    the right value) but the API silently omitted it from every response,
+    so neither the frontend nor `curl` could ever see which profile a job
+    actually used. Fixed by adding `profile: str | None` to `JobResponse`
+    (`backend/app/schemas/job.py`); the scan detail page now shows it in
+    the title (`nmap (quick_scan) → target`).
+  All six followed REPRODUCE → DOCUMENT → FIX → TEST → RETEST; regression
+  tests added for each rather than just patched and moved on.
+- New tests: `backend/tests/tools/test_registry.py` (+13, profiles/
+  ai_allowed/MANUAL_ONLY/multi-positional-args), `backend/tests/ai/
+  test_ai_security_boundary.py` (+3, adversarial `ai_allowed` bypass
+  attempts), `backend/tests/api/test_tools_health.py` (new, 3 tests),
+  `backend/tests/jobs/test_tasks.py` (new — the `execute_job` catch-all
+  regression test), `backend/tests/api/test_jobs.py` (+1, `job_timeout`
+  wiring), `kali/agent/tests/test_exec_timeout.py` (new) — full suite (131
+  tests) green.
+
 ## Unreleased — Phase 11 — Projects + Targets + hardening
 
 - **`Project` and `Target` models, for real** (`backend/app/models/project.py`,

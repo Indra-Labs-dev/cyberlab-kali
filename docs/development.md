@@ -6,10 +6,10 @@
 cd backend
 python3 -m venv .venv
 .venv/bin/pip install -r requirements-dev.txt
-POSTGRES_HOST=localhost POSTGRES_PORT=55432 .venv/bin/pytest tests/ -v
+POSTGRES_HOST=localhost POSTGRES_PORT=55432 REDIS_URL=redis://localhost:63790/0 .venv/bin/pytest tests/ -v
 ```
 
-`POSTGRES_HOST`/`POSTGRES_PORT` point pytest at the Postgres exposed by `docker compose` on the host (`127.0.0.1:55432` by default). `backend/tests/conftest.py` automatically redirects to a separate `<POSTGRES_DB>_test` database and creates it if missing — the test suite never writes into the dev database the containers use.
+`POSTGRES_HOST`/`POSTGRES_PORT` point pytest at the Postgres exposed by `docker compose` on the host (`127.0.0.1:55432` by default). `backend/tests/conftest.py` automatically redirects to a separate `<POSTGRES_DB>_test` database and creates it if missing — the test suite never writes into the dev database the containers use. `REDIS_URL` is needed since Phase 12 (`tests/jobs/test_tasks.py` calls `execute_job()` directly, which publishes real pub/sub updates) — points at the Redis exposed on the host (`127.0.0.1:63790` by default); omit it only when running inside a container that can resolve `cyberlab-redis`.
 
 En développement dans Docker, le code n'est pas monté en volume (build multi-stage classique) : après une modification, reconstruire le service concerné :
 

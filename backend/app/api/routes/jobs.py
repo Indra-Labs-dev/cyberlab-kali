@@ -21,9 +21,16 @@ router = APIRouter(prefix="/jobs", tags=["jobs"])
 @router.post("", response_model=JobResponse, status_code=201)
 async def create_job(request: JobCreateRequest, db: AsyncSession = Depends(get_db)) -> Job:
     try:
-        registry.get_tool(request.tool)
+        tool_def = registry.get_tool(request.tool)
     except registry.ToolNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    profile_args: dict = {}
+    if request.profile is not None:
+        try:
+            profile_args = registry.get_profile(tool_def, request.profile).args
+        except registry.ToolValidationError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     project_id = None
     target_id = None
@@ -48,14 +55,17 @@ async def create_job(request: JobCreateRequest, db: AsyncSession = Depends(get_d
         target_id = target.id
         target_address = target.address
 
-    full_params = {**request.options, "target": target_address}
+    full_params = {**profile_args, **request.options, "target": target_address}
     try:
         registry.build_command(request.tool, full_params)
     except registry.ToolValidationError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
+    effective_timeout = registry.effective_timeout(tool_def, request.profile, request.timeout)
+
     job = Job(
         tool=request.tool,
+        profile=request.profile,
         target=target_address,
         project_id=project_id,
         target_id=target_id,
@@ -67,7 +77,22 @@ async def create_job(request: JobCreateRequest, db: AsyncSession = Depends(get_d
     await db.refresh(job)
 
     queue = get_queue()
-    queue.enqueue(execute_job, str(job.id), request.tool, full_params, request.timeout, job_id=str(job.id))
+    # RQ's own job_timeout defaults to 180s independently of the tool's own
+    # timeout budget -- without this, RQ was silently killing the RQ worker
+    # process (JobTimeoutException) before a longer-running tool timeout
+    # (e.g. nikto's 280s) ever got a chance to fire on its own, and since
+    # that exception isn't one execute_job() catches, the job's DB row was
+    # never updated to a terminal status -- it stayed RUNNING forever. Found
+    # via Phase 12 end-to-end testing against a real (slow) external target.
+    queue.enqueue(
+        execute_job,
+        str(job.id),
+        request.tool,
+        full_params,
+        effective_timeout,
+        job_id=str(job.id),
+        job_timeout=effective_timeout + 30,
+    )
 
     return job
 

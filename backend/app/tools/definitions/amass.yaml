@@ -1,0 +1,26 @@
+name: amass
+category: osint
+description: Passive subdomain enumeration and attack-surface mapping.
+risk_level: SAFE
+ai_allowed: true
+command:
+  executable: amass
+# -passive avoids active DNS resolution/brute-forcing -- source data only.
+# -timeout is amass's own internal budget in minutes, kept short so the
+# process finishes comfortably inside this tool's own timeout below.
+fixed_args: ["enum", "-passive", "-timeout", "3"]
+arguments:
+  - name: target
+    type: target
+    required: true
+    flag: "-d"
+    description: Domain to enumerate.
+output:
+  format: text
+  parser: none
+max_timeout: 280
+profiles:
+  - name: passive_enum
+    description: Passive-only subdomain enumeration from OSINT sources.
+    args: {}
+    timeout: 200

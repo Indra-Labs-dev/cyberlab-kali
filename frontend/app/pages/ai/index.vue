@@ -7,6 +7,7 @@ interface ChatTurn {
 interface MissionStep {
   label: string;
   tool: string | null;
+  profile: string | null;
   target: string | null;
   target_id: string | null;
   options: Record<string, unknown>;
@@ -100,9 +101,14 @@ async function runStep(step: MissionStep, index: number) {
     // against a registered Target (set server-side, never by the model) —
     // running it then goes through the same authorization enforcement as
     // every other job. Falls back to the free-text target otherwise.
+    // profile takes precedence when the planner picked one (re-validated
+    // server-side against the tool's actual profiles); options are only
+    // sent when there's no profile, mirroring how POST /api/jobs itself
+    // treats the two.
+    const extra = step.profile ? { profile: step.profile } : { options: step.options };
     const body = step.target_id
-      ? { tool: step.tool, target_id: step.target_id, options: step.options }
-      : { tool: step.tool, target: step.target || plan.value?.target, options: step.options };
+      ? { tool: step.tool, target_id: step.target_id, ...extra }
+      : { tool: step.tool, target: step.target || plan.value?.target, ...extra };
     const job = await apiFetch<{ id: string }>("/api/jobs", { method: "POST", body });
     stepResult.value[index] = { ok: true, message: `Started — job ${job.id}` };
   } catch (err: any) {
@@ -226,7 +232,9 @@ onMounted(async () => {
                 <p class="text-sm font-medium text-slate-200">{{ i + 1 }}. {{ step.label }}</p>
                 <p class="mt-0.5 text-xs text-slate-500">{{ step.rationale }}</p>
                 <p class="mt-1 text-xs text-slate-600">
-                  <span v-if="step.tool">tool: {{ step.tool }} · target: {{ step.target }}</span>
+                  <span v-if="step.tool"
+                    >tool: {{ step.tool }}<span v-if="step.profile"> ({{ step.profile }})</span> · target: {{ step.target }}</span
+                  >
                   <span v-else class="italic">no registered tool for this step — manual action</span>
                 </p>
               </div>

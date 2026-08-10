@@ -1,0 +1,25 @@
+name: searchsploit
+category: vulnerability
+description: >-
+  Local Exploit-DB keyword search (offline, no network contact at all --
+  the "target" here is a software/version search term, not a host).
+risk_level: SAFE
+ai_allowed: true
+command:
+  executable: searchsploit
+fixed_args: ["-j"]
+arguments:
+  - name: target
+    type: string
+    required: true
+    positional: true
+    pattern: '^[A-Za-z0-9 ._\-]{1,128}$'
+    description: Software name/version to search for, e.g. "Apache 2.4.49".
+output:
+  format: json
+  parser: searchsploit
+profiles:
+  - name: keyword_search
+    description: Search Exploit-DB for the given software/version.
+    args: {}
+    timeout: 20

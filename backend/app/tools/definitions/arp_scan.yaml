@@ -1,0 +1,25 @@
+name: arp-scan
+category: reconnaissance
+description: >-
+  ARP-based local-network host discovery. Only works against hosts on the
+  same L2 segment as the container (cyberlab-kali-net or a dynamically
+  attached lab network) -- ARP does not route, so this is inherently scoped
+  to lab/local targets, never the internet.
+risk_level: CAUTION
+ai_allowed: true
+command:
+  executable: arp-scan
+arguments:
+  - name: target
+    type: target
+    required: true
+    positional: true
+    description: IP/CIDR range on the local segment to ARP-scan.
+output:
+  format: text
+  parser: none
+profiles:
+  - name: local_subnet_scan
+    description: ARP-sweep the given local range.
+    args: {}
+    timeout: 30

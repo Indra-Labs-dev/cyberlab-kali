@@ -143,6 +143,77 @@ def test_ai_module_has_no_subprocess_or_docker_access():
     assert offenders == []
 
 
+class ManualOnlyToolProvider(AIProvider):
+    """Proposes sqlmap (a real, registered, but ai_allowed=False tool) and an
+    invalid profile name -- both must be stripped even though "sqlmap" is a
+    real tool name, not a hallucination like "bash"/"metasploit".
+    """
+
+    async def generate(self, prompt: str, system: str = "", json_mode: bool = False) -> str:
+        if json_mode:
+            return (
+                '{"steps": ['
+                '{"label": "Exploit SQLi", "tool": "sqlmap", "target": "10.0.0.1", "options": {}}, '
+                '{"label": "Scan with a made-up profile", "tool": "nmap", "profile": "not_a_real_profile", '
+                '"target": "10.0.0.1", "options": {}}'
+                "]}"
+            )
+        return "I'll run sqlmap on that for you."
+
+
+@pytest.fixture
+async def manual_only_client():
+    app.dependency_overrides[get_provider] = lambda: ManualOnlyToolProvider()
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as ac:
+        yield ac
+    app.dependency_overrides.pop(get_provider, None)
+
+
+async def test_ai_planner_strips_registered_but_not_ai_allowed_tool(manual_only_client):
+    # sqlmap IS a real, registered tool (unlike "bash"/"metasploit" above) --
+    # this proves ai_allowed is enforced independently of the "is it even a
+    # known tool" check, not conflated with it.
+    response = await manual_only_client.post("/api/ai/plan", json={"target": "10.0.0.1", "goal": "own the box"})
+    assert response.status_code == 200
+    plan = response.json()
+    tool_names = {step["tool"] for step in plan["steps"] if step["tool"] is not None}
+    assert "sqlmap" not in tool_names
+
+
+async def test_ai_planner_strips_invalid_profile_name(manual_only_client):
+    response = await manual_only_client.post("/api/ai/plan", json={"target": "10.0.0.1", "goal": "own the box"})
+    assert response.status_code == 200
+    plan = response.json()
+    nmap_steps = [s for s in plan["steps"] if s["tool"] == "nmap"]
+    assert nmap_steps, "expected the nmap step to survive (only its profile is invalid)"
+    assert nmap_steps[0]["profile"] is None
+
+
+async def test_ai_planner_never_sends_non_ai_allowed_tools_to_the_model():
+    """Static/behavioral check: sqlmap must not even appear in the prompt
+    the model receives -- ai_allowed isn't just a post-hoc filter, the model
+    is never told the tool exists in the first place.
+    """
+    captured_prompts = []
+
+    class RecordingProvider(AIProvider):
+        async def generate(self, prompt: str, system: str = "", json_mode: bool = False) -> str:
+            captured_prompts.append(prompt)
+            return '{"steps": []}'
+
+    app.dependency_overrides[get_provider] = lambda: RecordingProvider()
+    try:
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as ac:
+            await ac.post("/api/ai/plan", json={"target": "10.0.0.1", "goal": "recon"})
+    finally:
+        app.dependency_overrides.pop(get_provider, None)
+
+    assert captured_prompts
+    assert "sqlmap" not in captured_prompts[0]
+
+
 def test_ai_module_has_no_write_access_to_target_model():
     """Static check: nothing under app/ai/ should ever assign to
     Target.authorization_status or otherwise mutate a Target -- that must

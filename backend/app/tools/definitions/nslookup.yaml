@@ -1,0 +1,24 @@
+name: nslookup
+category: dns_network
+description: DNS query tool (queries name servers interactively or in single-lookup mode).
+risk_level: SAFE
+ai_allowed: true
+command:
+  executable: nslookup
+arguments:
+  - name: target
+    type: target
+    required: true
+    positional: true
+    description: >-
+      Domain name or IP to resolve. Always non-interactive here since a
+      target argument is required (nslookup only enters its interactive
+      prompt when invoked with no arguments at all).
+output:
+  format: text
+  parser: none
+profiles:
+  - name: default_lookup
+    description: Resolve a name (or reverse-resolve an IP).
+    args: {}
+    timeout: 15

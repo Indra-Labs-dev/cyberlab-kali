@@ -1,0 +1,33 @@
+name: nc
+category: dns_network
+description: >-
+  TCP/UDP connectivity and banner-grab check (netcat-openbsd -- deliberately
+  the OpenBSD variant, not netcat-traditional, because it has no -e/-c
+  "execute a program on connect" flag; there is no way to turn this
+  registration into a reverse-shell primitive).
+risk_level: CAUTION
+ai_allowed: true
+command:
+  executable: nc
+fixed_args: ["-zv", "-w", "5"]
+arguments:
+  - name: target
+    type: target
+    required: true
+    positional: true
+    description: Host to connect to.
+  - name: port
+    type: integer
+    required: true
+    positional: true
+    min_value: 1
+    max_value: 65535
+    description: TCP port to check.
+output:
+  format: text
+  parser: none
+profiles:
+  - name: port_check
+    description: Zero-I/O connectivity check on a single port (no data sent).
+    args: {}
+    timeout: 10

@@ -1,0 +1,59 @@
+name: gobuster
+category: web_recon
+description: >-
+  Directory/file brute-force enumeration (dir mode only in this registration
+  -- dns/vhost modes are covered by dnsrecon/amass/subfinder instead).
+risk_level: CAUTION
+ai_allowed: true
+command:
+  executable: gobuster
+fixed_args: ["dir", "-q"]
+arguments:
+  - name: target
+    type: url
+    required: true
+    flag: "-u"
+    description: Base URL to enumerate.
+  # A closed set of literal, known-safe bundled wordlist paths -- never an
+  # arbitrary path from the caller, so this can't be turned into a file-read
+  # primitive for paths outside the wordlist directory.
+  - name: wordlist
+    type: choice
+    flag: "-w"
+    choices:
+      - "/usr/share/dirb/wordlists/small.txt"
+      - "/usr/share/dirb/wordlists/common.txt"
+      - "/usr/share/dirb/wordlists/big.txt"
+    required: true
+    description: Bundled wordlist to use.
+  - name: extensions
+    type: string
+    flag: "-x"
+    required: false
+    pattern: '^[A-Za-z0-9,]{1,64}$'
+    description: Comma-separated file extensions to also try, e.g. "php,html,txt".
+  - name: threads
+    type: integer
+    flag: "-t"
+    required: false
+    min_value: 1
+    max_value: 50
+    description: Concurrent worker threads.
+output:
+  format: text
+  parser: gobuster
+profiles:
+  - name: directory_enum_small
+    description: Fast pass with a small wordlist (~1k entries).
+    args: {wordlist: "/usr/share/dirb/wordlists/small.txt", threads: 10}
+    timeout: 90
+  - name: directory_enum_common
+    description: Standard pass with dirb's common wordlist (~4.6k entries).
+    args: {wordlist: "/usr/share/dirb/wordlists/common.txt", threads: 10}
+    timeout: 180
+    risk_level: RESTRICTED
+  - name: directory_enum_extensions
+    description: Common wordlist plus php/html/txt/bak extensions.
+    args: {wordlist: "/usr/share/dirb/wordlists/common.txt", extensions: "php,html,txt,bak", threads: 10}
+    timeout: 180
+    risk_level: RESTRICTED

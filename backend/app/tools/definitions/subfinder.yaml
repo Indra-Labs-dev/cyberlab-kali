@@ -1,0 +1,22 @@
+name: subfinder
+category: osint
+description: Fast passive subdomain enumeration from public sources.
+risk_level: SAFE
+ai_allowed: true
+command:
+  executable: subfinder
+fixed_args: ["-silent"]
+arguments:
+  - name: target
+    type: target
+    required: true
+    flag: "-d"
+    description: Domain to enumerate.
+output:
+  format: text
+  parser: none
+profiles:
+  - name: passive_enum
+    description: Passive subdomain enumeration.
+    args: {}
+    timeout: 60

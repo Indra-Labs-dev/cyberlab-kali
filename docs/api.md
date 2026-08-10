@@ -35,19 +35,20 @@ Documentation interactive générée automatiquement par FastAPI : `http://local
 
 ## Outils (Tool Registry — voir [tools.md](tools.md))
 
-- `GET /api/tools` — liste les outils disponibles et leurs paramètres.
+- `GET /api/tools` — liste les 31 outils disponibles, avec leurs `arguments`, `profiles` (préréglages nommés) et `ai_allowed`.
 - `GET /api/tools/{name}` — détail d'un outil (404 si inconnu).
+- `GET /api/tools/health` — vérification non destructive par outil (`--version`/`--help` côté agent, jamais un scan réel) : `[{"name","status","detail"}]` avec `status` dans `ready`/`broken`/`not_installed`/`unknown` (agent injoignable).
 
 ## Jobs (Job Engine)
 
-- `POST /api/jobs` — crée et met en file un job. Deux façons de désigner la cible, mutuellement exclusives :
+- `POST /api/jobs` — crée et met en file un job. Deux façons de désigner la cible, mutuellement exclusives, et deux façons de désigner les arguments (`profile` OU `options`) :
   ```json
   {"tool": "nmap", "target": "10.0.0.5", "options": {"ports": "80,443", "service_detection": true}, "timeout": 60}
   ```
   ```json
-  {"tool": "nmap", "target_id": "3b1e...-uuid", "options": {"service_detection": true}}
+  {"tool": "nmap", "target_id": "3b1e...-uuid", "profile": "quick_scan"}
   ```
-  Avec `target_id` : la target est résolue en base, `project_id`/`target_id` sont enregistrés sur le job, et son `authorization_status` est vérifié — `403` si elle n'est pas `LAB`/`AUTHORIZED`/`LOCAL` (voir [security.md](security.md)). Avec `target` en texte libre : aucune vérification d'autorisation, comportement historique inchangé (Phases 3–9). Dans les deux cas, validation du registre (allowlist d'outils, arguments) exécutée **avant** la création en base — une requête invalide renvoie `400`/`404` sans créer de job ni le mettre en file. Réponse `201` avec le job à l'état `QUEUED`.
+  Avec `target_id` : la target est résolue en base, `project_id`/`target_id` sont enregistrés sur le job, et son `authorization_status` est vérifié — `403` si elle n'est pas `LAB`/`AUTHORIZED`/`LOCAL` (voir [security.md](security.md)). Avec `target` en texte libre : aucune vérification d'autorisation, comportement historique inchangé (Phases 3–9). Avec `profile` : les valeurs par défaut du profil nommé sont utilisées comme base, que `options` peut surcharger clé par clé — dans tous les cas, validation du registre (allowlist d'outils, arguments) exécutée **avant** la création en base, identique que la valeur vienne d'un profil ou d'`options`. Requête invalide → `400`/`404` sans créer de job ni le mettre en file. Réponse `201` avec le job à l'état `QUEUED`.
 - `GET /api/jobs?status=&limit=&project_id=&target_id=` — liste les jobs (plus récents d'abord), filtrable par projet/target.
 - `GET /api/jobs/{id}` — détail d'un job (`404` si inconnu).
 - `POST /api/jobs/{id}/cancel` — annule un job `QUEUED` (retrait propre de la file) ou `RUNNING` (best effort, voir limitation ci-dessous). `400` si le job est déjà dans un état terminal.
@@ -86,8 +87,8 @@ Les findings sont créés **automatiquement** à la fin de chaque job `SUCCESS` 
 ## IA (voir [ai.md](ai.md))
 
 - `POST /api/ai/analyze/{job_id}` — analyse IA d'un job terminé, persistée sur `Job.ai_analysis`.
-- `POST /api/ai/plan` — `{target, goal}` ou `{target_id, goal}` → plan proposé (jamais exécuté automatiquement). Avec `target_id`, le contexte réel (autorisation, jobs/findings précédents) est injecté dans le prompt et chaque étape du plan est estampillée `target_id` **côté serveur** — le modèle ne peut jamais inventer ni modifier la cible qu'il reçoit.
-- `POST /api/ai/chat` — `{message, target_id?}` — question/réponse libre avec l'assistant, contexte de la target injecté si fournie. Aucune capacité d'exécution ni d'écriture — voir [security.md](security.md) pour les tests adversariaux qui vérifient ça noir sur blanc.
+- `POST /api/ai/plan` — `{target, goal}` ou `{target_id, goal}` → plan proposé (jamais exécuté automatiquement). Chaque étape peut porter un `tool` **et** un `profile` (préréglage nommé, préféré par le modèle à des `options` brutes) — les deux sont revalidés contre le Tool Registry réel après génération : un `tool` non enregistré ou non `ai_allowed`, ou un `profile` qui n'existe pas pour cet outil, est mis à `null`/effacé plutôt que transmis tel quel. Avec `target_id`, le contexte réel (autorisation, jobs/findings précédents) est injecté dans le prompt et chaque étape du plan est estampillée `target_id` **côté serveur** — le modèle ne peut jamais inventer ni modifier la cible qu'il reçoit.
+- `POST /api/ai/chat` — `{message, target_id?}` — question/réponse libre avec l'assistant, contexte de la target injecté si fournie, ainsi que la liste réelle des outils `ai_allowed` (l'assistant ne peut pas inventer un outil qui n'existe pas dans ce déploiement). Aucune capacité d'exécution ni d'écriture — voir [security.md](security.md) pour les tests adversariaux qui vérifient ça noir sur blanc.
 
 ## Temps réel
 

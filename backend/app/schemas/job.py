@@ -14,6 +14,11 @@ class JobCreateRequest(BaseModel):
     # Target record server-side -- `target` here is ignored if both are sent.
     target: str | None = None
     target_id: uuid.UUID | None = None
+    # A named Tool Registry profile (e.g. "quick_scan") to use as the default
+    # argument set -- `options` may still override individual keys. Purely a
+    # convenience/UI layer: build_command() validates the resulting arguments
+    # identically whether they came from a profile or were typed manually.
+    profile: str | None = None
     options: dict = Field(default_factory=dict)
     timeout: int | None = None
 
@@ -29,6 +34,7 @@ class JobResponse(BaseModel):
 
     id: uuid.UUID
     tool: str
+    profile: str | None
     target: str
     project_id: uuid.UUID | None
     target_id: uuid.UUID | None

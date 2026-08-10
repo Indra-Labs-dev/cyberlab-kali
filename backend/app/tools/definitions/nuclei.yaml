@@ -1,0 +1,45 @@
+name: nuclei
+category: web_security
+description: >-
+  Template-driven vulnerability scanner. Note: nuclei fetches its template
+  set from the internet on first run (standard nuclei behavior, not a
+  CyberLab addition) -- this is the one tool in the arsenal that needs
+  outbound network access from cyberlab-kali-net the first time it runs.
+  See docs/security.md.
+risk_level: RESTRICTED
+ai_allowed: true
+command:
+  executable: nuclei
+fixed_args: ["-jsonl", "-silent", "-nc"]
+arguments:
+  - name: target
+    type: url
+    required: true
+    flag: "-u"
+    description: URL or host to scan.
+  - name: severity
+    type: string
+    flag: "-s"
+    required: false
+    pattern: '^[a-z,]{1,64}$'
+    default: "info,low,medium"
+    description: Comma-separated severity filter (info,low,medium,high,critical).
+  - name: tags
+    type: string
+    flag: "-tags"
+    required: false
+    pattern: '^[a-z0-9,\-]{1,128}$'
+    description: Restrict to templates matching these comma-separated tags.
+output:
+  format: json
+  parser: nuclei
+profiles:
+  - name: quick_scan
+    description: Info/low/medium severity templates only.
+    args: {severity: "info,low,medium"}
+    timeout: 180
+  - name: critical_only
+    description: High and critical severity templates only -- fewer, more significant findings.
+    args: {severity: "high,critical"}
+    timeout: 180
+    risk_level: RESTRICTED

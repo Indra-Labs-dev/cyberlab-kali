@@ -1,15 +1,28 @@
 name: nikto
-category: vulnerability_scan
+category: web_security
 description: Web server vulnerability scanner.
 risk_level: RESTRICTED
+ai_allowed: true
 command:
   executable: nikto
 # No -output flag: nikto writes plain text to stdout by default. Passing
 # "-output -" makes nikto treat "-" as a filename and append ".txt" to it,
 # which fails ("Unable to open '-.txt' for write") — discovered in Phase 4
 # end-to-end testing.
-fixed_args: []
-default_timeout: 120
+# -nocheck: nikto phones home to check for a plugin/database update on every
+# startup by default. In this container that request can get rejected
+# (403) or simply blocked, and nikto then stalls until the job's own
+# timeout kills it, wasting the entire scan window. -nocheck skips it --
+# found via Phase 12 end-to-end testing against a real external target.
+fixed_args: ["-nocheck"]
+# 120s (the original default) is comfortably enough against a local lab
+# target, but a real internet-hosted target with normal network latency and
+# nikto's full default check set can genuinely take several minutes --
+# confirmed via Phase 12 end-to-end testing (a real scan against
+# scanme.nmap.org was still legitimately making progress, not stuck, when
+# the old 120s limit killed it). Raised close to the agent's own 300s hard
+# cap rather than pretending nikto is fast.
+default_timeout: 280
 max_timeout: 300
 arguments:
   - name: target
@@ -22,6 +35,24 @@ arguments:
     flag: "-ssl"
     default: false
     description: Force SSL/TLS mode.
+  - name: tuning
+    type: string
+    flag: "-Tuning"
+    required: false
+    pattern: '^[1234789abcx]{1,12}$'
+    description: >-
+      Nikto tuning categories to run (e.g. "9" for SQL injection checks).
+      Category 6 (Denial of Service) is intentionally never allowed by this
+      pattern, even if requested.
 output:
   format: text
   parser: nikto
+profiles:
+  - name: basic_web_scan
+    description: Standard Nikto scan, all default (non-DoS) checks.
+    args: {}
+    timeout: 280
+  - name: tuning_scan
+    description: Focused scan -- injection, command execution, and auth bypass checks only.
+    args: {tuning: "489a"}
+    timeout: 180

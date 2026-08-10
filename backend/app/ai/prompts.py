@@ -1,5 +1,16 @@
 import json
 
+
+def build_tool_catalog_summary(tools: list[dict]) -> str:
+    """Renders the AI-visible Tool Registry as a compact list for a system
+    prompt, so the Assistant can answer "what tools can I use" questions
+    grounded in what's actually registered -- never inventing a tool name.
+    Only ai_allowed tools are ever passed in here by the caller.
+    """
+    lines = [f"- {t['name']} ({t['category']}): {t['description']}" for t in tools]
+    return "\n".join(lines)
+
+
 ANALYST_SYSTEM = """You are a defensive security analyst assistant inside CyberLab, a local \
 cybersecurity lab tool used only for authorized testing (CTF, labs, pentest with permission, \
 auditing systems the user owns). You analyze the output of a security tool that already ran \
@@ -30,14 +41,17 @@ def build_analysis_prompt(tool: str, target: str, exit_code: int | None, parsed_
 PLANNER_SYSTEM = """You are a mission planning assistant inside CyberLab, a local cybersecurity \
 lab tool used only for authorized testing (CTF, labs, pentest with permission, auditing systems \
 the user owns). Given a target and a goal, propose an ordered plan of reconnaissance/scanning \
-steps using ONLY the tools listed below — never invent a tool that isn't listed. You propose a \
-plan for the user to review; you do not execute anything yourself.
+steps using ONLY the tools listed below — never invent a tool that isn't listed. Prefer picking \
+one of a tool's listed profiles (curated argument presets) over inventing raw options — only use \
+"options" when no profile fits. You propose a plan for the user to review; you do not execute \
+anything yourself.
 
 Respond with a single JSON object matching exactly this shape, no prose outside the JSON:
 {
   "steps": [
     {"label": "short step description", "tool": "<one of the listed tool names, or null for a \
-manual/non-tool step>", "target": "<target to use>", "options": {<tool-specific options>}, \
+manual/non-tool step>", "profile": "<one of that tool's listed profile names, or null>", \
+"target": "<target to use>", "options": {<tool-specific options, only if profile is null>}, \
 "rationale": "why this step, one sentence"}
   ]
 }
@@ -53,6 +67,7 @@ def build_planner_prompt(
                 "name": t["name"],
                 "description": t["description"],
                 "arguments": [a["name"] for a in t["arguments"]],
+                "profiles": [{"name": p["name"], "description": p["description"]} for p in t["profiles"]],
             }
             for t in available_tools
         ],

@@ -94,5 +94,24 @@ def execute_job(job_id: str, tool_name: str, params: dict, timeout: int | None =
             job.finished_at = _now()
             session.commit()
             publish_job_update(job_id, {"id": job_id, "status": JobStatus.FAILED.value, "error": str(exc)})
+        except Exception as exc:
+            # Catch-all, deliberately broad: any unexpected error here (an
+            # RQ-level JobTimeoutException if job_timeout and the tool's own
+            # timeout ever drift apart again, a DB hiccup, anything) must
+            # still leave the job in a terminal state. Before this existed,
+            # an uncaught exception left the row stuck at RUNNING forever --
+            # found via Phase 12 end-to-end testing when RQ's own timeout
+            # fired before the tool's timeout did (see jobs.py::create_job).
+            try:
+                session.refresh(job)
+                if job.status != JobStatus.CANCELLED:
+                    job.status = JobStatus.FAILED
+                    job.error = f"unexpected error: {exc}"
+                    job.finished_at = _now()
+                    session.commit()
+                    publish_job_update(job_id, {"id": job_id, "status": JobStatus.FAILED.value, "error": job.error})
+            except Exception:
+                pass
+            raise
     finally:
         session.close()

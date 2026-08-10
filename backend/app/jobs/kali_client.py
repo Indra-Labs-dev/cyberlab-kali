@@ -7,6 +7,20 @@ class KaliAgentError(RuntimeError):
     pass
 
 
+def get_tool_health() -> list[dict]:
+    settings = get_settings()
+    try:
+        response = httpx.get(
+            f"{settings.kali_agent_url}/health/tools",
+            headers={"X-Agent-Token": settings.kali_agent_token},
+            timeout=60,
+        )
+        response.raise_for_status()
+    except httpx.HTTPError as exc:
+        raise KaliAgentError(f"kali agent unreachable: {exc}") from exc
+    return response.json()
+
+
 def run_tool(tool: str, args: list[str], timeout: int = 60) -> dict:
     settings = get_settings()
     try:

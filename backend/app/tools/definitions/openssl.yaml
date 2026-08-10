@@ -1,0 +1,22 @@
+name: openssl
+category: utilities
+description: TLS certificate/connection inspection (openssl s_client).
+risk_level: SAFE
+ai_allowed: true
+command:
+  executable: openssl
+fixed_args: ["s_client", "-showcerts"]
+arguments:
+  - name: target
+    type: target
+    required: true
+    flag: "-connect"
+    description: host:port to connect to, e.g. "10.0.0.5:443".
+output:
+  format: text
+  parser: none
+profiles:
+  - name: cert_info
+    description: Show the full certificate chain presented by the server.
+    args: {}
+    timeout: 15

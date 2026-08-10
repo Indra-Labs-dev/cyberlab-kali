@@ -2,6 +2,7 @@ name: nmap
 category: reconnaissance
 description: Network exploration and port/service scanning.
 risk_level: CAUTION
+ai_allowed: true
 command:
   executable: nmap
 # -oX - forces machine-readable XML on stdout so the parser never has to
@@ -42,6 +43,45 @@ arguments:
     choices: ["1", "2", "3", "4"]
     required: false
     description: Timing template (1=slow/stealthy .. 4=fast). T5 excluded as too aggressive for shared/lab networks.
+  - name: top_ports
+    type: integer
+    flag: "--top-ports"
+    required: false
+    min_value: 1
+    max_value: 1000
+    description: Scan nmap's N most common ports instead of a manual range.
+  - name: vuln_scripts
+    type: boolean
+    flag: "--script=vuln"
+    default: false
+    description: Run the NSE "vuln" script category. Noisier and slower than default_scripts.
+# No "OS Detection" profile: nmap's -O needs CAP_NET_RAW, which this
+# container intentionally does not have (see docs/security.md, same reason
+# -sT/-Pn are forced) -- offering a profile that would just fail isn't
+# useful, so it's left out rather than faked.
 output:
   format: xml
   parser: nmap
+profiles:
+  - name: quick_scan
+    description: Fast top-ports scan, no service/version probing.
+    args: {timing: "4", top_ports: 100}
+    timeout: 60
+  - name: service_detection
+    description: Detect service/version info on open ports.
+    args: {timing: "4", service_detection: true, top_ports: 100}
+    timeout: 90
+  - name: top_ports
+    description: Scan the 1000 most common ports.
+    args: {timing: "4", top_ports: 1000}
+    timeout: 120
+  - name: full_tcp
+    description: Full 1-65535 TCP connect scan. Slow.
+    args: {timing: "4", ports: "1-65535"}
+    timeout: 240
+    risk_level: RESTRICTED
+  - name: vulnerability_nse
+    description: Default + vuln NSE scripts on common ports. Noisy, use only against LAB/AUTHORIZED targets.
+    args: {timing: "4", top_ports: 100, default_scripts: true, vuln_scripts: true}
+    timeout: 180
+    risk_level: RESTRICTED

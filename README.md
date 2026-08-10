@@ -31,9 +31,9 @@ docker compose down
 
 ## État du projet
 
-Développement par phases (voir [CHANGELOG.md](CHANGELOG.md)). Les 11 phases sont complètes.
+Développement par phases (voir [CHANGELOG.md](CHANGELOG.md)). Les 12 phases sont complètes.
 
-**Fonctionnel de bout en bout, vérifié en conditions réelles :** Projects/Targets (modèle réel, autorisation comme frontière de sécurité), Tool Registry (nmap/whatweb/nikto, niveaux de risque SAFE/CAUTION/RESTRICTED), Job Engine avec statut temps réel (WebSocket) et rattachement optionnel à un Project/Target, terminal interactif confiné au conteneur Kali, Lab Manager (DVWA) piloté via un Docker Socket Proxy plutôt qu'un accès direct à `docker.sock`, IA locale contextualisée (chat, analyse de scan, Mission Planner — jamais d'exécution ni de modification d'autorisation par l'IA elle-même), Findings extraits automatiquement, Reports (HTML/Markdown/JSON/PDF), authentification API optionnelle.
+**Fonctionnel de bout en bout, vérifié en conditions réelles :** Projects/Targets (modèle réel, autorisation comme frontière de sécurité), **Tool Registry avec 31 outils curés et testés** (reconnaissance, DNS, web recon/security, SSL/TLS, énumération, OSINT, utilitaires — voir [docs/tools.md](docs/tools.md)) avec profils, niveaux de risque SAFE/CAUTION/RESTRICTED/MANUAL_ONLY et `ai_allowed` réellement appliqué (pas juste affiché), Job Engine avec statut temps réel (WebSocket) et rattachement optionnel à un Project/Target, terminal interactif confiné au conteneur Kali, Lab Manager (DVWA) piloté via un Docker Socket Proxy plutôt qu'un accès direct à `docker.sock`, IA locale contextualisée (chat, analyse de scan, Mission Planner par tool+profile — jamais d'exécution ni de modification d'autorisation par l'IA elle-même), Tool Health (vérification non destructive par outil), Findings extraits automatiquement, Reports (HTML/Markdown/JSON/PDF), authentification API optionnelle.
 
 ## Documentation
 

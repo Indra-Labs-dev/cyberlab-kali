@@ -1,0 +1,21 @@
+name: whois
+category: dns_network
+description: Domain/IP registration lookup.
+risk_level: SAFE
+ai_allowed: true
+command:
+  executable: whois
+arguments:
+  - name: target
+    type: target
+    required: true
+    positional: true
+    description: Domain name or IP address to look up.
+output:
+  format: text
+  parser: none
+profiles:
+  - name: default_lookup
+    description: Registration info for a domain or IP.
+    args: {}
+    timeout: 20

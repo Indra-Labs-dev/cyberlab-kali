@@ -1,0 +1,40 @@
+name: dig
+category: dns_network
+description: DNS lookup utility.
+risk_level: SAFE
+ai_allowed: true
+command:
+  executable: dig
+arguments:
+  - name: target
+    type: target
+    required: true
+    positional: true
+    description: Domain name to query.
+  - name: record_type
+    type: choice
+    flag: "-t"
+    choices: ["A", "AAAA", "MX", "TXT", "NS", "CNAME", "SOA", "ANY"]
+    required: false
+    default: "A"
+    description: DNS record type to query.
+output:
+  format: text
+  parser: none
+profiles:
+  - name: standard_lookup
+    description: A-record lookup.
+    args: {record_type: "A"}
+    timeout: 15
+  - name: mx_lookup
+    description: Mail exchanger records.
+    args: {record_type: "MX"}
+    timeout: 15
+  - name: txt_lookup
+    description: TXT records (SPF/DKIM/verification strings).
+    args: {record_type: "TXT"}
+    timeout: 15
+  - name: ns_lookup
+    description: Authoritative nameservers.
+    args: {record_type: "NS"}
+    timeout: 15

@@ -18,7 +18,7 @@ Nuxt (frontend, :3300) --REST/WS--> FastAPI (api, :8300) --+--> PostgreSQL (:554
 | `cyberlab-worker` | Worker RQ (exécution des jobs d'outils) | cyberlab-backend, cyberlab-kali-net | — |
 | `cyberlab-postgres` | Persistance | cyberlab-backend | 55432 |
 | `cyberlab-redis` | File de jobs / pub-sub | cyberlab-backend | 63790 |
-| `cyberlab-kali` | Outils de sécurité, isolé | cyberlab-kali-net | — |
+| `cyberlab-kali` | Outils de sécurité (31, voir [tools.md](tools.md)), isolé, `cap_add: [NET_RAW]` narrow depuis la Phase 12 | cyberlab-kali-net | — |
 | `cyberlab-labmanager` | Cycle de vie des labs Docker (non-root) | cyberlab-backend | — |
 | `cyberlab-docker-proxy` | Docker Socket Proxy — seul point de contact avec `docker.sock` | cyberlab-backend | — |
 
@@ -43,5 +43,5 @@ Project (1) ──< Target (N) ──< Job (N, via target_id)
 - **File de jobs : RQ plutôt que Celery.** Plus léger (pas de broker AMQP séparé), suffisant pour des jobs d'outils CLI séquentiels/parallèles, cohérent avec Redis déjà présent dans la stack.
 - **Aucun accès direct à `docker.sock` depuis l'API/worker, ni même depuis le Lab Manager.** Depuis la Phase 11, seul `cyberlab-docker-proxy` (Docker Socket Proxy) touche le socket réel ; `cyberlab-labmanager` s'y connecte en HTTP (`DOCKER_HOST=tcp://...`) avec une surface d'API Docker restreinte (pas d'`EXEC`/`VOLUMES`/`SYSTEM`). Voir [security.md](security.md).
 - **Ports hôte remappés** (3300/8300/55432/63790) pour cohabiter avec d'autres stacks Docker locales utilisant les ports par défaut.
-- **Tool Registry déclaratif (YAML)** : chaque outil Kali est décrit par un fichier de définition (exécutable, arguments typés/validés, parser de sortie, niveau de risque `SAFE`/`CAUTION`/`RESTRICTED`), jamais codé en dur côté frontend. Voir [tools.md](tools.md).
+- **Tool Registry déclaratif (YAML)** : chaque outil Kali est décrit par un fichier de définition (exécutable, arguments typés/validés, parser de sortie, niveau de risque `SAFE`/`CAUTION`/`RESTRICTED`/`MANUAL_ONLY`), jamais codé en dur côté frontend. Depuis la Phase 12, 31 outils curés (pas un dump de la distribution Kali — voir [tools.md](tools.md) pour le détail des inclusions/exclusions), chacun avec des **profils** (préréglages nommés d'arguments, validés par la même couche que le mode manuel) et un champ `ai_allowed` réellement appliqué : un outil `ai_allowed: false` n'est jamais inclus dans le prompt envoyé au modèle, pas seulement filtré après coup.
 - **IA sans accès direct à l'exécution.** Flux imposé : `Utilisateur → IA → Intention structurée (JSON) → Job Engine (POST /api/jobs, Policy Engine + Tool Registry) → Agent Kali → Résultat → IA (analyse)`. L'IA ne détient ni `subprocess`, ni `docker.sock`, ni accès en écriture au modèle `Target` — vérifié par des tests statiques en plus des tests fonctionnels (`backend/tests/ai/test_ai_security_boundary.py`). Voir [ai.md](ai.md) et [security.md](security.md).

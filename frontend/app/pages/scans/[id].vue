@@ -11,6 +11,7 @@ interface AnalysisResult {
 interface Job {
   id: string;
   tool: string;
+  profile: string | null;
   target: string;
   project_id: string | null;
   target_id: string | null;
@@ -92,7 +93,10 @@ onMounted(loadJob);
 
 <template>
   <div>
-    <PageHeader :title="job ? `${job.tool} → ${job.target}` : 'Scan'" subtitle="Live job status" />
+    <PageHeader
+      :title="job ? `${job.tool}${job.profile ? ` (${job.profile})` : ''} → ${job.target}` : 'Scan'"
+      subtitle="Live job status"
+    />
 
     <div v-if="loading" class="px-8 py-6 text-sm text-slate-600">Loading…</div>
 

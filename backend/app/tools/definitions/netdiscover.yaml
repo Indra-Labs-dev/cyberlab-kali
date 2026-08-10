@@ -1,0 +1,27 @@
+name: netdiscover
+category: reconnaissance
+description: >-
+  Active ARP reconnaissance/scanner for local networks. Same L2-only scope
+  as arp-scan.
+risk_level: CAUTION
+ai_allowed: true
+command:
+  executable: netdiscover
+# -P: print results and stop instead of entering the interactive ncurses
+# display, which would otherwise hang until the job timeout kills it.
+fixed_args: ["-P"]
+arguments:
+  - name: range
+    type: string
+    flag: "-r"
+    required: true
+    pattern: '^[A-Za-z0-9.\-:/]{1,64}$'
+    description: IP/CIDR range on the local segment to scan.
+output:
+  format: text
+  parser: none
+profiles:
+  - name: local_subnet_scan
+    description: ARP-sweep the given local range, non-interactive.
+    args: {}
+    timeout: 30

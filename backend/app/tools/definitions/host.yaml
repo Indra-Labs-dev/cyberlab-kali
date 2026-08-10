@@ -1,0 +1,21 @@
+name: host
+category: dns_network
+description: Simple DNS lookup utility.
+risk_level: SAFE
+ai_allowed: true
+command:
+  executable: host
+arguments:
+  - name: target
+    type: target
+    required: true
+    positional: true
+    description: Domain name or IP (for reverse lookup) to resolve.
+output:
+  format: text
+  parser: none
+profiles:
+  - name: default_lookup
+    description: Resolve a name (or reverse-resolve an IP).
+    args: {}
+    timeout: 15

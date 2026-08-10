@@ -1,0 +1,36 @@
+name: ldapsearch
+category: enumeration
+description: Anonymous LDAP directory query.
+risk_level: SAFE
+ai_allowed: true
+command:
+  executable: ldapsearch
+fixed_args: ["-x"]
+arguments:
+  - name: target
+    type: url
+    required: true
+    flag: "-H"
+    description: LDAP URI, e.g. "ldap://10.0.0.5".
+  - name: base_dn
+    type: string
+    flag: "-b"
+    required: false
+    pattern: '^[A-Za-z0-9=,.\- ]{0,128}$'
+    default: ""
+    description: Search base DN (empty string queries the root DSE).
+  - name: scope
+    type: choice
+    flag: "-s"
+    choices: ["base", "one", "sub"]
+    required: false
+    default: "base"
+    description: Search scope.
+output:
+  format: text
+  parser: none
+profiles:
+  - name: rootdse_query
+    description: Anonymous query of the server's root DSE (naming contexts, supported controls, etc).
+    args: {base_dn: "", scope: "base"}
+    timeout: 20

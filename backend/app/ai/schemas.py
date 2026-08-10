@@ -18,6 +18,11 @@ class AnalysisResult(BaseModel):
 class MissionStep(BaseModel):
     label: str
     tool: str | None = None
+    # Name of a Tool Registry profile for `tool`, if the model picked one --
+    # revalidated against the tool's actual profiles in planner.py the same
+    # way `tool` itself is revalidated against the registry (never trusted
+    # as-is). Falls back to None (raw `options`) if invalid.
+    profile: str | None = None
     target: str | None = None
     # Set server-side (never by the model) when the plan was requested against
     # a registered Target -- lets the frontend run a step via POST /api/jobs

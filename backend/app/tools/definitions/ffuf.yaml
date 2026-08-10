@@ -1,0 +1,54 @@
+name: ffuf
+category: web_recon
+description: >-
+  Fast web fuzzer for directory/parameter discovery. The target URL must
+  contain the literal keyword FUZZ marking the injection point, e.g.
+  "http://10.0.0.5/FUZZ" -- ffuf's own convention, not a CyberLab addition.
+risk_level: CAUTION
+ai_allowed: true
+command:
+  executable: ffuf
+arguments:
+  - name: target
+    type: url
+    required: true
+    flag: "-u"
+    description: URL containing the literal "FUZZ" keyword at the injection point.
+  - name: wordlist
+    type: choice
+    flag: "-w"
+    choices:
+      - "/usr/share/dirb/wordlists/small.txt"
+      - "/usr/share/dirb/wordlists/common.txt"
+      - "/usr/share/dirb/wordlists/big.txt"
+    required: true
+    description: Bundled wordlist to use.
+  - name: match_codes
+    type: string
+    flag: "-mc"
+    required: false
+    pattern: '^[0-9,]{1,64}$'
+    default: "200,204,301,302,307,401,403"
+    description: HTTP status codes to treat as a match.
+  - name: threads
+    type: integer
+    flag: "-t"
+    required: false
+    min_value: 1
+    max_value: 50
+    description: Concurrent worker threads.
+output:
+  format: text
+  parser: none
+profiles:
+  - name: directory_discovery
+    description: Directory/file discovery with the small wordlist.
+    args: {wordlist: "/usr/share/dirb/wordlists/small.txt", threads: 10}
+    timeout: 90
+  - name: parameter_discovery
+    description: >-
+      Same fuzzing engine, aimed at a URL with FUZZ in the query string
+      (e.g. "http://target/page.php?FUZZ=1") to discover parameter names.
+    args: {wordlist: "/usr/share/dirb/wordlists/common.txt", threads: 10}
+    timeout: 120
+    risk_level: RESTRICTED

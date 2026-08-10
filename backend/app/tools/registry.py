@@ -33,17 +33,46 @@ class ToolValidationError(ValueError):
 
 def _validate_definition_integrity(tool: ToolDefinition) -> None:
     positional_count = 0
+    target_arg_names = set()
     for arg in tool.arguments:
         if arg.positional:
             positional_count += 1
-            if arg.type not in ("target", "url"):
-                raise ValueError(f"{tool.name}: positional argument {arg.name!r} must be of type 'target' or 'url'")
+            # The first positional argument is where the job's resolved
+            # target (target_id -> Target.address, or free-text `target`)
+            # always lands (see app/api/routes/jobs.py). It's usually a
+            # 'target'/'url', but a handful of tools (searchsploit) don't
+            # scan a network address at all -- their "target" is a local
+            # keyword, so a plain 'string' is allowed too. A second
+            # positional slot exists for tools whose CLI takes a second bare
+            # value after that (e.g. `nc host port`).
+            if positional_count == 1 and arg.type not in ("target", "url", "string"):
+                raise ValueError(
+                    f"{tool.name}: the first positional argument {arg.name!r} must be 'target', 'url', or 'string'"
+                )
         elif not arg.flag:
             raise ValueError(f"{tool.name}: non-positional argument {arg.name!r} must define a flag")
         if arg.type == "choice" and not arg.choices:
             raise ValueError(f"{tool.name}: choice argument {arg.name!r} must define choices")
-    if positional_count > 1:
-        raise ValueError(f"{tool.name}: at most one positional argument is supported")
+        if arg.type in ("target", "url"):
+            target_arg_names.add(arg.name)
+    if positional_count > 2:
+        raise ValueError(f"{tool.name}: at most two positional arguments are supported")
+
+    known_arg_names = {arg.name for arg in tool.arguments}
+    seen_profile_names = set()
+    for profile in tool.profiles:
+        if profile.name in seen_profile_names:
+            raise ValueError(f"{tool.name}: duplicate profile name {profile.name!r}")
+        seen_profile_names.add(profile.name)
+        unknown = set(profile.args) - known_arg_names
+        if unknown:
+            raise ValueError(f"{tool.name}/{profile.name}: profile references unknown argument(s) {sorted(unknown)}")
+        target_override = target_arg_names & set(profile.args)
+        if target_override:
+            raise ValueError(
+                f"{tool.name}/{profile.name}: profile must not preset the target argument {sorted(target_override)}"
+                " -- target always comes from the job/target_id, never a profile"
+            )
 
 
 @lru_cache
@@ -68,6 +97,22 @@ def get_tool(name: str) -> ToolDefinition:
         raise ToolNotFoundError(f"unknown or disallowed tool: {name}") from exc
 
 
+def get_profile(tool: ToolDefinition, profile_name: str):
+    for profile in tool.profiles:
+        if profile.name == profile_name:
+            return profile
+    raise ToolValidationError(f"unknown profile {profile_name!r} for tool {tool.name!r}")
+
+
+def effective_timeout(tool: ToolDefinition, profile: str | None, requested_timeout: int | None) -> int:
+    base = tool.default_timeout
+    if profile is not None:
+        profile_def = get_profile(tool, profile)
+        if profile_def.timeout is not None:
+            base = profile_def.timeout
+    return min(requested_timeout or base, tool.max_timeout)
+
+
 def _validate_target(arg: ArgumentDef, value: str) -> str:
     if not isinstance(value, str) or not TARGET_PATTERN.match(value):
         raise ToolValidationError(f"invalid target for argument {arg.name!r}: {value!r}")
@@ -80,8 +125,8 @@ def _validate_url(arg: ArgumentDef, value: str) -> str:
 
     parsed = urlparse(value)
     if parsed.scheme:
-        if parsed.scheme not in ("http", "https"):
-            raise ToolValidationError(f"argument {arg.name!r} must use http or https: {value!r}")
+        if parsed.scheme not in ("http", "https", "ldap", "ldaps"):
+            raise ToolValidationError(f"argument {arg.name!r} must use http, https, ldap, or ldaps: {value!r}")
         host = parsed.hostname or ""
         if not host or not TARGET_PATTERN.match(host):
             raise ToolValidationError(f"argument {arg.name!r} has an invalid host: {value!r}")
@@ -118,13 +163,26 @@ def _validate_integer(arg: ArgumentDef, value: int) -> int:
     return value
 
 
-def build_command(tool_name: str, params: dict) -> list[str]:
+def build_command(tool_name: str, params: dict, profile: str | None = None) -> list[str]:
     """Validate `params` against the tool's definition and return the argument
     list to send to the Kali agent (the executable itself is resolved there).
+
+    `profile`, if given, supplies default argument values (a curated preset)
+    that `params` may override key-by-key -- it is a starting point, not a
+    separate trust boundary. Every value, whether it came from the profile
+    or from `params`, goes through the exact same per-argument validation
+    below; a profile can never smuggle in something build_command wouldn't
+    otherwise accept.
     """
     tool = get_tool(tool_name)
     args: list[str] = list(tool.fixed_args)
     positional: list[str] = []
+
+    effective_params = dict(params)
+    if profile is not None:
+        profile_def = get_profile(tool, profile)
+        effective_params = {**profile_def.args, **params}
+    params = effective_params
 
     known_names = {arg.name for arg in tool.arguments}
     unknown = set(params) - known_names
@@ -152,7 +210,10 @@ def build_command(tool_name: str, params: dict) -> list[str]:
                 args += [arg.flag, value]
         elif arg.type == "string":
             value = _validate_string(arg, value)
-            args += [arg.flag, value]
+            if arg.positional:
+                positional.append(value)
+            else:
+                args += [arg.flag, value]
         elif arg.type == "boolean":
             if not isinstance(value, bool):
                 raise ToolValidationError(f"argument {arg.name!r} must be a boolean")
@@ -163,6 +224,9 @@ def build_command(tool_name: str, params: dict) -> list[str]:
             args += [arg.flag, value]
         elif arg.type == "integer":
             value = _validate_integer(arg, value)
-            args += [arg.flag, str(value)]
+            if arg.positional:
+                positional.append(str(value))
+            else:
+                args += [arg.flag, str(value)]
 
     return args + positional

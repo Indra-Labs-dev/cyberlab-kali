@@ -132,6 +132,16 @@ services:
       - no-new-privileges:true
     cap_drop:
       - ALL
+    # Phase 12: masscan (raw SYN send) and traceroute (raw ICMP/UDP probes)
+    # need CAP_NET_RAW to function at all -- there's no unprivileged mode for
+    # either, unlike nmap's -sT. This is a deliberate, narrow addition, not a
+    # blanket revert of cap_drop: ALL: the container still runs non-root,
+    # still has no docker.sock, still can't reach anything outside
+    # cyberlab-kali-net + dynamically-attached lab networks. The capability
+    # this grants is crafting raw packets on those networks only -- see
+    # docs/security.md for the full trade-off writeup.
+    cap_add:
+      - NET_RAW
     mem_limit: 512m
     cpus: "1.0"
 

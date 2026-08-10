@@ -7,17 +7,26 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.ai.analyst import AIAnalyst
 from app.ai.ollama import OllamaProvider, OllamaUnavailableError
 from app.ai.planner import AIMissionPlanner
+from app.ai.prompts import build_tool_catalog_summary
 from app.ai.schemas import AnalysisResult, ChatResponse, MissionPlan
 from app.db.session import get_db
 from app.models.job import Job
 from app.models.target import Target
+from app.tools import registry
 
 router = APIRouter(prefix="/ai", tags=["ai"])
 
 CHAT_SYSTEM = """You are the CyberLab AI Assistant, embedded in a local cybersecurity lab tool \
 used only for authorized testing (CTF, labs, pentest with permission, auditing systems the user \
 owns). Answer questions about security concepts, the scan results the user shares, and how to \
-use CyberLab. Never help attack systems without authorization; if asked to, explain you can't."""
+use CyberLab. Never help attack systems without authorization; if asked to, explain you can't.
+
+When asked what tools are available, answer ONLY from the list below -- these are the tools \
+actually registered and runnable in this CyberLab instance. Never mention a tool that isn't in \
+this list, even if you know of it in general (e.g. commercial scanners, tools not installed here).
+
+Available tools:
+{tool_catalog}"""
 
 
 def get_provider() -> OllamaProvider:
@@ -101,7 +110,8 @@ class ChatRequest(BaseModel):
 async def chat(
     request: ChatRequest, db: AsyncSession = Depends(get_db), provider: OllamaProvider = Depends(get_provider)
 ) -> ChatResponse:
-    system = CHAT_SYSTEM
+    ai_visible_tools = [tool.model_dump() for tool in registry.list_tools() if tool.ai_allowed]
+    system = CHAT_SYSTEM.format(tool_catalog=build_tool_catalog_summary(ai_visible_tools))
     if request.target_id is not None:
         target = await db.get(Target, request.target_id)
         if target is None:

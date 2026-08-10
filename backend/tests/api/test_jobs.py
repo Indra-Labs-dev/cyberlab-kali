@@ -54,6 +54,33 @@ async def test_create_job_valid_enqueues_and_persists(mock_get_queue, client):
     assert get_response.json()["id"] == job_id
 
 
+@patch("app.api.routes.jobs.get_queue")
+async def test_create_job_passes_job_timeout_matching_tool_timeout(mock_get_queue, client):
+    # Regression test: RQ's own job_timeout defaults to 180s independently
+    # of the tool's timeout. Without passing job_timeout explicitly here, RQ
+    # was silently killing long-running jobs (e.g. nikto's 280s default)
+    # before the tool-level timeout ever got a chance to fire on its own --
+    # and since that RQ exception wasn't one execute_job() caught, the job
+    # was left stuck at RUNNING forever. Found via Phase 12 end-to-end
+    # testing. See also tests/jobs/test_tasks.py for the execute_job side.
+    mock_queue = MagicMock()
+    mock_get_queue.return_value = mock_queue
+
+    response = await client.post(
+        "/api/jobs",
+        json={"tool": "nikto", "target": "http://10.0.0.1", "profile": "basic_web_scan"},
+    )
+    assert response.status_code == 201
+    body = response.json()
+    # Regression test: JobResponse initially omitted `profile` entirely, so
+    # a job created with a profile silently reported profile: missing from
+    # the API even though it was correctly persisted in the DB -- caught by
+    # live end-to-end testing through the AI Mission Planner's "Run" button.
+    assert body["profile"] == "basic_web_scan"
+    _, kwargs = mock_queue.enqueue.call_args
+    assert kwargs["job_timeout"] == 280 + 30
+
+
 async def test_get_nonexistent_job_returns_404(client):
     response = await client.get("/api/jobs/00000000-0000-0000-0000-000000000000")
     assert response.status_code == 404

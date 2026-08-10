@@ -1,0 +1,32 @@
+name: dnsrecon
+category: osint
+description: DNS enumeration (standard record sweep, or a zone-transfer attempt).
+risk_level: CAUTION
+ai_allowed: true
+command:
+  executable: dnsrecon
+arguments:
+  - name: target
+    type: target
+    required: true
+    flag: "-d"
+    description: Domain to enumerate.
+  - name: scan_type
+    type: choice
+    flag: "-t"
+    choices: ["std", "axfr"]
+    required: false
+    default: "std"
+    description: "std: standard record sweep. axfr: attempt a zone transfer only."
+output:
+  format: text
+  parser: none
+profiles:
+  - name: standard_enum
+    description: Standard DNS record sweep (SOA/NS/A/AAAA/MX/common subdomains).
+    args: {scan_type: "std"}
+    timeout: 60
+  - name: zone_transfer_check
+    description: Attempt an AXFR zone transfer against each nameserver -- confirms a real, well-known misconfiguration if it succeeds.
+    args: {scan_type: "axfr"}
+    timeout: 30

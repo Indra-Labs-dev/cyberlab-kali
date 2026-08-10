@@ -1,0 +1,39 @@
+name: curl
+category: utilities
+description: >-
+  HTTP(S) request utility -- GET requests only. No -X/-d/-H exposed, so this
+  can't be turned into an arbitrary-method or arbitrary-body HTTP client
+  through the registry.
+risk_level: SAFE
+ai_allowed: true
+command:
+  executable: curl
+fixed_args: ["-s", "-m", "10"]
+arguments:
+  - name: target
+    type: url
+    required: true
+    positional: true
+    description: URL to fetch.
+  - name: headers_only
+    type: boolean
+    flag: "-I"
+    default: false
+    description: Fetch only the response headers (HEAD-equivalent), not the body.
+  - name: follow_redirects
+    type: boolean
+    flag: "-L"
+    default: false
+    description: Follow HTTP redirects.
+output:
+  format: text
+  parser: none
+profiles:
+  - name: fetch_headers
+    description: Response headers only.
+    args: {headers_only: true}
+    timeout: 15
+  - name: fetch_body
+    description: Full response body (truncated by curl's own output, not modified here).
+    args: {headers_only: false, follow_redirects: true}
+    timeout: 15

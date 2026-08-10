@@ -1,10 +1,18 @@
 name: whatweb
-category: reconnaissance
+category: web_recon
 description: Web technology fingerprinting.
 risk_level: SAFE
+ai_allowed: true
 command:
   executable: whatweb
-fixed_args: ["--log-json=-", "--no-errors"]
+# -q (quiet) is required, not cosmetic: without it whatweb's default console
+# logger and the --log-json=- logger both write to stdout, and closing the
+# first races with the second flushing, causing whatweb to exit 1 with a
+# Ruby "closed stream (IOError)" even though the JSON output itself was
+# already complete and correct. Reproduced reliably (found via Phase 12
+# end-to-end testing against a real external target -- didn't show up
+# against the DVWA lab target used in earlier phases).
+fixed_args: ["--log-json=-", "--no-errors", "-q"]
 default_timeout: 45
 max_timeout: 120
 arguments:
@@ -19,6 +27,26 @@ arguments:
     choices: ["1", "3"]
     required: false
     description: Aggression level (1=passive/stealthy, 3=aggressive). Level 4 excluded as unsafe for shared targets.
+  - name: verbose
+    type: boolean
+    flag: "-v"
+    default: false
+    description: Verbose output (all plugin matches, not just the strongest).
 output:
   format: json
   parser: whatweb
+profiles:
+  - name: basic_fingerprint
+    description: Passive/stealthy technology fingerprint.
+    args: {aggression: "1"}
+    timeout: 30
+  - name: aggressive_fingerprint
+    description: Aggressive fingerprint -- more requests, more thorough plugin matching.
+    args: {aggression: "3"}
+    timeout: 60
+    risk_level: CAUTION
+  - name: verbose_fingerprint
+    description: Aggressive fingerprint with full verbose plugin output.
+    args: {aggression: "3", verbose: true}
+    timeout: 60
+    risk_level: CAUTION

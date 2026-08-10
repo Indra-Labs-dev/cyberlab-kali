@@ -18,13 +18,70 @@ app = FastAPI(title="CyberLab Kali Agent")
 
 AGENT_TOKEN = os.environ.get("AGENT_TOKEN", "")
 
-# Allowlist: logical tool name -> resolved absolute executable path.
-# Resolved once at startup so a request can never redirect execution to another binary.
+# Allowlist: logical tool name -> resolved absolute executable path. Resolved
+# once at startup so a request can never redirect execution to another
+# binary, and so a tool that failed to install (missing from the image)
+# simply never appears here rather than being trusted blindly. This list
+# must be kept in lockstep with backend/app/tools/definitions/*.yaml on the
+# API side -- see docs/tools.md for the full curated list and rationale.
+# The *logical* name here is the registry tool name, which is not always the
+# executable's own filename (e.g. "dnsutils_dig" -> "dig").
+CANDIDATE_TOOLS: dict[str, str] = {
+    # Reconnaissance
+    "nmap": "nmap",
+    "masscan": "masscan",
+    "arp-scan": "arp-scan",
+    "netdiscover": "netdiscover",
+    # DNS / network
+    "dig": "dig",
+    "host": "host",
+    "nslookup": "nslookup",
+    "traceroute": "traceroute",
+    "whois": "whois",
+    "nc": "nc",
+    # Web reconnaissance
+    "whatweb": "whatweb",
+    "wafw00f": "wafw00f",
+    "gobuster": "gobuster",
+    "ffuf": "ffuf",
+    # Web security
+    "nikto": "nikto",
+    "nuclei": "nuclei",
+    "sqlmap": "sqlmap",
+    # SSL/TLS
+    "sslscan": "sslscan",
+    "testssl": "testssl",
+    # Enumeration
+    "enum4linux": "enum4linux",
+    "smbclient": "smbclient",
+    "rpcclient": "rpcclient",
+    "ldapsearch": "ldapsearch",
+    # Vulnerability / security analysis
+    "searchsploit": "searchsploit",
+    # OSINT
+    "theharvester": "theHarvester",
+    "amass": "amass",
+    "subfinder": "subfinder",
+    "dnsrecon": "dnsrecon",
+    # Utilities
+    "curl": "curl",
+    "wget": "wget",
+    "openssl": "openssl",
+    # NOTE: lynis and jq are intentionally NOT in this list even though both
+    # are installed in the image. Neither fits the Tool Registry's per-job,
+    # single-target model: lynis audits whatever system it runs on (no
+    # network target at all -- running it against a "target" would just
+    # self-audit this container, which isn't a meaningful scan action), and
+    # jq processes JSON via stdin (no target, and no inter-job piping exists
+    # in this architecture). Both remain available for manual use via the
+    # Terminal, which is unrestricted by design -- see docs/tools.md.
+}
+
 ALLOWED_TOOLS: dict[str, str] = {}
-for _tool in ("nmap", "whatweb", "nikto"):
-    _path = shutil.which(_tool)
+for _name, _executable in CANDIDATE_TOOLS.items():
+    _path = shutil.which(_executable)
     if _path:
-        ALLOWED_TOOLS[_tool] = _path
+        ALLOWED_TOOLS[_name] = _path
 
 MAX_TIMEOUT_SECONDS = 300
 MAX_ARGS = 32
@@ -36,7 +93,11 @@ UNSAFE_CHARS = re.compile(r"[;&|`$<>\n\r\\]")
 
 
 class ExecRequest(BaseModel):
-    tool: Literal["nmap", "whatweb", "nikto"]
+    # Not a Literal of fixed names anymore (the arsenal is too large to hand-
+    # maintain as a type union) -- validated against ALLOWED_TOOLS below
+    # instead, which has the exact same effect: an unresolved/unknown name
+    # is rejected before any subprocess is ever considered.
+    tool: str
     args: list[str] = Field(default_factory=list, max_length=MAX_ARGS)
     timeout: int = Field(default=60, ge=1, le=MAX_TIMEOUT_SECONDS)
 
@@ -74,6 +135,41 @@ async def health() -> dict:
     return {"status": "ok", "tools_available": sorted(ALLOWED_TOOLS.keys())}
 
 
+TOOL_HEALTH_CHECK_TIMEOUT = 5
+
+
+def _check_tool_health(name: str, executable: str) -> dict:
+    """Non-destructive invocation check: never runs a real scan, just tries
+    a version/help flag and confirms the binary actually produces output.
+    Not every tool supports --version, so --help is tried as a fallback.
+    """
+    for probe in (["--version"], ["--help"]):
+        try:
+            result = subprocess.run(
+                [executable, *probe],
+                capture_output=True,
+                text=True,
+                timeout=TOOL_HEALTH_CHECK_TIMEOUT,
+                shell=False,
+            )
+        except subprocess.TimeoutExpired:
+            continue
+        except OSError:
+            return {"name": name, "status": "broken", "detail": "failed to execute"}
+        output = ((result.stdout or "") + (result.stderr or "")).strip()
+        if output:
+            return {"name": name, "status": "ready", "detail": output.splitlines()[0][:200]}
+    return {"name": name, "status": "broken", "detail": "no output from --version or --help"}
+
+
+@app.get("/health/tools")
+async def health_tools(x_agent_token: str | None = Header(default=None)) -> list[dict]:
+    _require_auth(x_agent_token)
+    loop = asyncio.get_event_loop()
+    checks = [loop.run_in_executor(None, _check_tool_health, name, path) for name, path in ALLOWED_TOOLS.items()]
+    return list(await asyncio.gather(*checks))
+
+
 @app.post("/exec", response_model=ExecResponse)
 async def exec_tool(request: ExecRequest, x_agent_token: str | None = Header(default=None)) -> ExecResponse:
     _require_auth(x_agent_token)
@@ -99,10 +195,24 @@ async def exec_tool(request: ExecRequest, x_agent_token: str | None = Header(def
         stdout = result.stdout
         stderr = result.stderr
     except subprocess.TimeoutExpired as exc:
+        # exc.stdout/.stderr are documented as str when text=True is passed
+        # to subprocess.run, but in practice CPython can still hand back
+        # bytes here for output captured right as the process is killed
+        # (the decode happens in communicate(), not before) -- found via
+        # Phase 12 end-to-end testing (nikto timing out on a slow target
+        # crashed this handler with "can't concat str to bytes"). Coerce
+        # defensively rather than trust the type the stdlib claims.
+        def _to_text(value: str | bytes | None) -> str:
+            if value is None:
+                return ""
+            if isinstance(value, bytes):
+                return value.decode(errors="replace")
+            return value
+
         timed_out = True
         exit_code = -1
-        stdout = exc.stdout or ""
-        stderr = (exc.stderr or "") + "\n[cyberlab] process killed after timeout"
+        stdout = _to_text(exc.stdout)
+        stderr = _to_text(exc.stderr) + "\n[cyberlab] process killed after timeout"
     duration_ms = int((time.monotonic() - started) * 1000)
 
     return ExecResponse(

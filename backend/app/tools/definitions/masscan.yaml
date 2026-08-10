@@ -1,0 +1,41 @@
+name: masscan
+category: reconnaissance
+description: >-
+  High-speed port scanner using raw SYN packets. Needs CAP_NET_RAW (granted
+  narrowly to cyberlab-kali in Phase 12, see docs/security.md) -- there is no
+  unprivileged fallback mode, unlike nmap's -sT.
+risk_level: RESTRICTED
+ai_allowed: true
+command:
+  executable: masscan
+fixed_args: ["-oJ", "-"]
+arguments:
+  - name: target
+    type: target
+    required: true
+    positional: true
+    description: Host, IP, or CIDR range to scan.
+  - name: ports
+    type: string
+    flag: "-p"
+    required: true
+    pattern: '^[0-9,\-]{1,64}$'
+    description: Port list/range, e.g. "80,443" or "1-1024".
+  - name: rate
+    type: integer
+    flag: "--rate"
+    required: false
+    min_value: 1
+    # Hard-capped well below masscan's usual internet-scale rates -- this is
+    # a lab tool, not a network-flooding one, regardless of what any caller
+    # (including the AI) requests.
+    max_value: 1000
+    description: Packets per second (capped at 1000 regardless of request).
+output:
+  format: json
+  parser: masscan
+profiles:
+  - name: quick_scan
+    description: Common ports at a conservative rate.
+    args: {ports: "1-1000", rate: 100}
+    timeout: 60

@@ -1,0 +1,53 @@
+name: sqlmap
+category: web_security
+description: >-
+  Automated SQL injection detection/exploitation. This registration
+  deliberately exposes only detection and database-name enumeration --
+  arguments like --dump, --os-shell, or --sql-shell (data exfiltration /
+  arbitrary command execution) are never defined here, so they can never be
+  requested through this API regardless of caller. A human who needs the
+  full sqlmap feature set can still use it directly via the Terminal, which
+  is intentionally separate and unrestricted (see docs/security.md) -- this
+  registration only bounds what's reachable through the Tool Registry.
+risk_level: MANUAL_ONLY
+ai_allowed: false
+command:
+  executable: sqlmap
+fixed_args: ["--batch"]
+arguments:
+  - name: target
+    type: url
+    required: true
+    flag: "-u"
+    description: URL with a parameter to test (e.g. "http://target/page.php?id=1").
+  - name: level
+    type: integer
+    flag: "--level"
+    required: false
+    min_value: 1
+    max_value: 3
+    description: Test thoroughness (1-3; sqlmap's own max is 5, capped here).
+  - name: risk
+    type: integer
+    flag: "--risk"
+    required: false
+    min_value: 1
+    max_value: 2
+    description: Test aggressiveness (1-2; sqlmap's own max is 3 and includes heavier/riskier payloads, excluded here).
+  - name: enumerate_dbs
+    type: boolean
+    flag: "--dbs"
+    default: false
+    description: List database names (detection/enumeration only, no data extraction).
+output:
+  format: text
+  parser: none
+profiles:
+  - name: detect_only
+    description: Confirm whether the parameter is injectable, nothing else.
+    args: {level: 1, risk: 1}
+    timeout: 120
+  - name: enumerate_databases
+    description: Detect injectability and list database names.
+    args: {level: 1, risk: 1, enumerate_dbs: true}
+    timeout: 180

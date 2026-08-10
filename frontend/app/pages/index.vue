@@ -7,6 +7,12 @@ interface Job {
   created_at: string;
 }
 
+interface ToolDef {
+  name: string;
+  category: string;
+  ai_allowed: boolean;
+}
+
 const { apiFetch } = useApi();
 
 const apiStatus = ref<"checking" | "ok" | "error">("checking");
@@ -18,6 +24,28 @@ const aiDetail = ref<string>();
 
 const recentJobs = ref<Job[]>([]);
 const activeJobs = computed(() => recentJobs.value.filter((j) => j.status === "QUEUED" || j.status === "RUNNING"));
+
+const toolStats = reactive({ total: 0, installed: 0, aiEnabled: 0, byCategory: {} as Record<string, number> });
+
+async function loadToolStats() {
+  try {
+    const [tools, health] = await Promise.all([
+      apiFetch<ToolDef[]>("/api/tools"),
+      apiFetch<{ name: string; status: string }[]>("/api/tools/health"),
+    ]);
+    const readyNames = new Set(health.filter((h) => h.status === "ready").map((h) => h.name));
+    toolStats.total = tools.length;
+    toolStats.installed = tools.filter((t) => readyNames.has(t.name)).length;
+    toolStats.aiEnabled = tools.filter((t) => t.ai_allowed).length;
+    const byCategory: Record<string, number> = {};
+    tools.forEach((t) => {
+      byCategory[t.category] = (byCategory[t.category] || 0) + 1;
+    });
+    toolStats.byCategory = byCategory;
+  } catch {
+    // Leave defaults (0) -- the tile below only renders once total > 0.
+  }
+}
 
 async function loadStatus() {
   try {
@@ -59,6 +87,7 @@ async function loadJobs() {
 onMounted(() => {
   loadStatus();
   loadJobs();
+  loadToolStats();
 });
 </script>
 
@@ -71,6 +100,38 @@ onMounted(() => {
       <StatusTile label="Database" :status="dbStatus" />
       <StatusTile label="Kali" :status="kaliStatus" :detail="kaliDetail" />
       <StatusTile label="AI (Ollama)" :status="aiStatus" :detail="aiDetail" />
+    </div>
+
+    <div v-if="toolStats.total > 0" class="px-8 pt-6">
+      <div class="rounded-lg border border-slate-800 bg-slate-900/40 p-4">
+        <div class="mb-3 flex items-center justify-between">
+          <h2 class="text-sm font-semibold text-slate-300">Tool Arsenal</h2>
+          <NuxtLink to="/tools" class="text-xs text-emerald-400 hover:underline">Open Tools</NuxtLink>
+        </div>
+        <div class="mb-3 grid grid-cols-2 gap-3 sm:grid-cols-4">
+          <div>
+            <div class="text-lg font-semibold text-slate-100">{{ toolStats.total }}</div>
+            <div class="text-xs text-slate-500">Tools</div>
+          </div>
+          <div>
+            <div class="text-lg font-semibold text-emerald-400">{{ toolStats.installed }}</div>
+            <div class="text-xs text-slate-500">Installed</div>
+          </div>
+          <div>
+            <div class="text-lg font-semibold text-cyan-400">{{ toolStats.aiEnabled }}</div>
+            <div class="text-xs text-slate-500">AI-enabled</div>
+          </div>
+          <div>
+            <div class="text-lg font-semibold text-slate-400">{{ toolStats.total - toolStats.aiEnabled }}</div>
+            <div class="text-xs text-slate-500">Manual-only</div>
+          </div>
+        </div>
+        <div class="flex flex-wrap gap-1.5 text-xs text-slate-500">
+          <span v-for="(count, category) in toolStats.byCategory" :key="category" class="rounded bg-slate-800/60 px-1.5 py-0.5">
+            {{ category }}: {{ count }}
+          </span>
+        </div>
+      </div>
     </div>
 
     <div class="grid grid-cols-1 gap-6 px-8 py-6 lg:grid-cols-2">

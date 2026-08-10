@@ -22,6 +22,10 @@ class Job(Base):
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     tool: Mapped[str] = mapped_column(String(64), nullable=False)
+    # Name of the Tool Registry profile used to seed `params`, if any -- kept
+    # only for display (scan history, reports); execution never re-resolves
+    # it, `params` already holds the fully-resolved argument values.
+    profile: Mapped[str | None] = mapped_column(String(64), nullable=True)
     # Free-text target string -- kept for backward compatibility and for
     # quick ad-hoc scans that don't need a registered Target. When a job is
     # created from a real Target (project_id/target_id set), this still
