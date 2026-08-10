@@ -12,6 +12,8 @@ interface Job {
   id: string;
   tool: string;
   target: string;
+  project_id: string | null;
+  target_id: string | null;
   params: Record<string, unknown>;
   status: string;
   created_at: string;
@@ -98,6 +100,12 @@ onMounted(loadJob);
       <div class="flex items-center gap-4">
         <JobStatusBadge :status="job.status" />
         <span v-if="job.exit_code !== null" class="text-xs text-slate-500">exit code {{ job.exit_code }}</span>
+        <NuxtLink v-if="job.target_id" :to="`/targets/${job.target_id}`" class="text-xs text-emerald-400 hover:underline">
+          View target
+        </NuxtLink>
+        <NuxtLink v-if="job.project_id" :to="`/projects/${job.project_id}`" class="text-xs text-emerald-400 hover:underline">
+          View project
+        </NuxtLink>
         <button
           v-if="!isTerminal"
           class="ml-auto rounded-md border border-red-800 px-3 py-1 text-xs font-medium text-red-400 hover:bg-red-900/30"

@@ -1,16 +1,27 @@
 import uuid
 from datetime import datetime
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from app.models.job import JobStatus
 
 
 class JobCreateRequest(BaseModel):
     tool: str
-    target: str
+    # Either target (free-text, quick ad-hoc scans) or target_id (a
+    # registered Target, subject to authorization enforcement) must be set.
+    # When target_id is given, the actual scan address is resolved from the
+    # Target record server-side -- `target` here is ignored if both are sent.
+    target: str | None = None
+    target_id: uuid.UUID | None = None
     options: dict = Field(default_factory=dict)
     timeout: int | None = None
+
+    @model_validator(mode="after")
+    def _require_target_or_target_id(self) -> "JobCreateRequest":
+        if not self.target and not self.target_id:
+            raise ValueError("either target or target_id is required")
+        return self
 
 
 class JobResponse(BaseModel):
@@ -19,6 +30,8 @@ class JobResponse(BaseModel):
     id: uuid.UUID
     tool: str
     target: str
+    project_id: uuid.UUID | None
+    target_id: uuid.UUID | None
     params: dict
     status: JobStatus
     created_at: datetime

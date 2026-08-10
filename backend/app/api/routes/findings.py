@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.session import get_db
 from app.models.finding import Finding, Severity
+from app.models.job import Job
 from app.schemas.finding import FindingResponse
 
 router = APIRouter(prefix="/findings", tags=["findings"])
@@ -15,6 +16,8 @@ router = APIRouter(prefix="/findings", tags=["findings"])
 async def list_findings(
     severity: Severity | None = Query(default=None),
     job_id: uuid.UUID | None = Query(default=None),
+    project_id: uuid.UUID | None = Query(default=None),
+    target_id: uuid.UUID | None = Query(default=None),
     limit: int = Query(default=100, ge=1, le=500),
     db: AsyncSession = Depends(get_db),
 ) -> list[Finding]:
@@ -23,6 +26,12 @@ async def list_findings(
         stmt = stmt.where(Finding.severity == severity)
     if job_id is not None:
         stmt = stmt.where(Finding.job_id == job_id)
+    if project_id is not None or target_id is not None:
+        stmt = stmt.join(Job, Finding.job_id == Job.id)
+        if project_id is not None:
+            stmt = stmt.where(Job.project_id == project_id)
+        if target_id is not None:
+            stmt = stmt.where(Job.target_id == target_id)
     result = await db.execute(stmt)
     return list(result.scalars().all())
 

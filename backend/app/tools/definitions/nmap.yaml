@@ -1,6 +1,7 @@
 name: nmap
 category: reconnaissance
 description: Network exploration and port/service scanning.
+risk_level: CAUTION
 command:
   executable: nmap
 # -oX - forces machine-readable XML on stdout so the parser never has to

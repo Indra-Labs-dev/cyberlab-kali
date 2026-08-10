@@ -135,24 +135,77 @@ services:
     mem_limit: 512m
     cpus: "1.0"
 
+  # Sits between cyberlab-labmanager and the real docker.sock. Labmanager no
+  # longer touches the socket directly — it talks to this proxy over plain
+  # HTTP on the internal cyberlab-backend network, and the proxy exposes only
+  # the narrow slice of the Docker API that lab lifecycle management actually
+  # needs (container/network/image read+create, no exec/volumes/system/swarm).
+  # This means even a full compromise of labmanager can no longer docker-exec
+  # into arbitrary containers, read secrets, or touch the Docker daemon
+  # configuration. See docs/security.md.
+  cyberlab-docker-proxy:
+    image: tecnativa/docker-socket-proxy:0.2
+    container_name: cyberlab-docker-proxy
+    restart: unless-stopped
+    environment:
+      CONTAINERS: 1
+      NETWORKS: 1
+      IMAGES: 1
+      POST: 1
+      # Everything else is explicitly denied.
+      EXEC: 0
+      VOLUMES: 0
+      SYSTEM: 0
+      BUILD: 0
+      COMMIT: 0
+      CONFIGS: 0
+      DISTRIBUTION: 0
+      EVENTS: 0
+      INFO: 0
+      NODES: 0
+      PLUGINS: 0
+      SECRETS: 0
+      SERVICES: 0
+      SESSION: 0
+      SWARM: 0
+      TASKS: 0
+      AUTH: 0
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks:
+      - cyberlab-backend
+    # Not read_only: the entrypoint templates haproxy.cfg from a file baked
+    # into the image at container start, so the root fs needs to stay
+    # writable. The real hardening here is the API allowlist above (EXEC,
+    # VOLUMES, SYSTEM, etc. all denied), not the container's own filesystem.
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    mem_limit: 128m
+    cpus: "0.25"
+
   cyberlab-labmanager:
     build:
       context: ./labmanager
       dockerfile: Dockerfile
     container_name: cyberlab-labmanager
     restart: unless-stopped
+    depends_on:
+      - cyberlab-docker-proxy
     environment:
       LABMANAGER_TOKEN: ${LABMANAGER_TOKEN:?LABMANAGER_TOKEN must be set in .env}
       KALI_NETWORK_NAME: cyberlab-kali-net
-    volumes:
-      # The only service in the stack with access to the Docker socket, and
-      # only for lab lifecycle management (start/stop/reset/delete labs).
-      # Isolating this to one narrow-purpose service — rather than granting
-      # it to cyberlab-api — keeps the blast radius of that access contained.
-      # See docs/security.md for the reasoning and the accepted trade-off.
-      - /var/run/docker.sock:/var/run/docker.sock
+      # docker.from_env() (Python docker SDK) honors DOCKER_HOST exactly like
+      # the Docker CLI, so no code changes were needed to redirect from a
+      # socket mount to this TCP proxy endpoint.
+      DOCKER_HOST: tcp://cyberlab-docker-proxy:2375
     networks:
       - cyberlab-backend
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
     mem_limit: 256m
     cpus: "0.5"
 

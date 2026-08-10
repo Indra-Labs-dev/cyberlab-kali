@@ -1,5 +1,98 @@
 # Changelog
 
+## Unreleased — Phase 11 — Projects + Targets + hardening
+
+- **`Project` and `Target` models, for real** (`backend/app/models/project.py`,
+  `backend/app/models/target.py`): closes the gap Phase 5 documented honestly
+  ("not yet implemented" placeholder pages) rather than faked with mock data.
+  `Project`: id, name, description, status (`ACTIVE`/`ARCHIVED`), timestamps.
+  `Target`: id, `project_id` (mandatory FK), name, hostname/ip_address/url,
+  `target_type` (`HOST`/`IP`/`DOMAIN`/`URL`/`CONTAINER`/`LAB`/`OTHER`),
+  `authorization_status` (`UNKNOWN` default, `LAB`/`AUTHORIZED`/`LOCAL`
+  executable), description, metadata. Fully additive migration
+  (`6495416ebbf2`): new tables, plus nullable `project_id`/`target_id` on
+  `jobs` with `ondelete="SET NULL"` — deleting a Project/Target never
+  destroys job history.
+- **Target authorization as a real security boundary**
+  (`backend/app/targets/authorization.py`): `POST /api/jobs` is the single
+  enforcement point — a `target_id` resolving to an `UNKNOWN`-status target
+  is rejected with `403` before a job is ever created, regardless of caller
+  (frontend, AI planner, curl). Auto-inferred to `LAB`/`LOCAL` for
+  localhost/127.0.0.1/Docker lab hostnames at creation time; everything else
+  starts `UNKNOWN` and needs an explicit human `PATCH`.
+- **Full REST APIs**: `backend/app/api/routes/projects.py` (CRUD + nested
+  targets, rollup counts, `409` on delete-with-targets),
+  `backend/app/api/routes/targets.py` (filtered list, CRUD, job history).
+  `backend/app/api/routes/jobs.py` gained `target_id` resolution + the
+  authorization check above, plus `project_id`/`target_id` filters on
+  `GET /api/jobs`. See [api.md](docs/api.md).
+- **Frontend**: `/projects`, `/projects/[id]` (tabs: Overview/Targets/Scans/
+  Findings/Labs/AI/Reports), `/targets`, `/targets/[id]` (authorization
+  controls, scan-target form using the real `target_id`) — replacing the
+  Phase 5 "not yet implemented" placeholders with real, API-backed pages.
+  `/ai` reworked with an active-target-context selector so AI actions are
+  always grounded in a real, resolved target.
+- **AI made context-aware without gaining any new power**
+  (`backend/app/ai/planner.py`, `backend/app/api/routes/ai.py`): `/api/ai/plan`
+  and `/api/ai/chat` accept an optional `target_id`; when given, the real
+  target (authorization status, prior jobs/findings) is injected into the
+  prompt, and the planner stamps `target_id` onto every proposed step
+  **server-side, never from model output** — the AI can never invent or
+  swap a target. Adversarial black-box tests
+  (`backend/tests/ai/test_ai_security_boundary.py`) prove this holds even
+  against a fake provider that actively lies about having executed shell
+  commands or changed authorization: the database stays untouched in every
+  case, and two static tests assert `app/ai/` has zero `subprocess`/`docker`
+  imports and zero write access to the `Target` model.
+- **Tool Registry gained risk levels** (`SAFE`/`CAUTION`/`RESTRICTED` on
+  every YAML definition — `whatweb: SAFE`, `nmap: CAUTION`, `nikto:
+  RESTRICTED`), surfaced as a badge on the `/tools` page.
+- **Docker Socket Proxy replaces direct `docker.sock` access for the Lab
+  Manager**: new `cyberlab-docker-proxy` service
+  (`tecnativa/docker-socket-proxy`) holds the only mount of the real socket
+  (read-only), exposing just `CONTAINERS`/`NETWORKS`/`IMAGES`/`POST` over
+  HTTP on the internal network — `EXEC`/`VOLUMES`/`SYSTEM`/`SECRETS`/`SWARM`
+  all explicitly denied. `cyberlab-labmanager` now connects via
+  `DOCKER_HOST=tcp://cyberlab-docker-proxy:2375` (the Docker SDK's
+  `docker.from_env()` already honors `DOCKER_HOST`, so `docker_manager.py`
+  needed zero code changes) and, no longer needing raw socket-file
+  permissions, now runs as a **non-root user** with `cap_drop: ALL` — the
+  last non-root exception in the stack is gone. Verified live: full lab
+  lifecycle (create → running with a real published port → actual DVWA
+  HTTP response → stop → delete, container and dedicated network both
+  cleaned up) replayed end-to-end through the proxy.
+- **RBAC (ADMIN/ANALYST/USER) evaluated and deliberately deferred**: the API
+  has no user identity today (a single shared bearer token), so attaching a
+  role to a request has nothing to attach it to without introducing a `User`
+  model and login — exactly the "major rework" the spec said to avoid if
+  RBAC wasn't feasible without one. Documented in
+  [security.md](docs/security.md) along with what already exists that
+  covers part of the same need (the Policy Engine at job creation, and
+  `authorization_status` as a resource-level rather than user-level
+  boundary).
+- **`AUTH_ENABLED` coverage extended**: new parametrized regression test
+  (`test_every_api_route_is_guarded_when_auth_enabled`) walks every router
+  mounted under `/api` — including easy-to-forget ones like
+  `/api/reports/{id}/download`, `/api/labs/definitions`, `/api/ai/plan` —
+  plus a dedicated `/api/ws/terminal` WebSocket-auth test that had no
+  coverage before.
+- **Final structured security audit** (18 categories, PASS/DEFERRED per
+  category with justification) appended to
+  [security.md](docs/security.md#phase-11--audit-de-sécurité-final). One
+  honest non-PASS worth calling out here: `POST /api/jobs` still accepts a
+  free-text `target` with no `target_id`, inherited unchanged from Phases
+  3–9 (the classic Tools page) — that path has no `Target` row to check, so
+  `authorization_status` doesn't apply to it. This is a documented, scoped
+  gap (the legacy manual-tool-run flow), not a regression: every path that
+  matters for this phase's stated goal — the AI, and the new Targets UI —
+  always goes through `target_id` and is fully enforced.
+- New backend tests: `backend/tests/projects/` (11), `backend/tests/targets/`
+  (16, split across CRUD and authorization), `backend/tests/ai/
+  test_ai_security_boundary.py` (6 adversarial AI security tests), plus
+  additions to `backend/tests/api/test_jobs.py`, `backend/tests/ai/
+  test_planner.py`, `backend/tests/tools/test_registry.py`, and
+  `backend/tests/test_auth_middleware.py` — full suite (113 tests) green.
+
 ## Unreleased — Phase 10 — Security hardening pass
 
 - **Optional bearer-token authentication** for the API (`AUTH_ENABLED`, disabled

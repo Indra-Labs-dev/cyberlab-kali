@@ -1,6 +1,7 @@
 name: whatweb
 category: reconnaissance
 description: Web technology fingerprinting.
+risk_level: SAFE
 command:
   executable: whatweb
 fixed_args: ["--log-json=-", "--no-errors"]

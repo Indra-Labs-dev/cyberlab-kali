@@ -10,7 +10,9 @@ from app.jobs.pubsub import publish_job_update
 from app.jobs.queue import get_queue
 from app.jobs.tasks import execute_job
 from app.models.job import Job, JobStatus
+from app.models.target import Target
 from app.schemas.job import JobCreateRequest, JobResponse
+from app.targets.authorization import is_executable
 from app.tools import registry
 
 router = APIRouter(prefix="/jobs", tags=["jobs"])
@@ -23,7 +25,30 @@ async def create_job(request: JobCreateRequest, db: AsyncSession = Depends(get_d
     except registry.ToolNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 
-    full_params = {**request.options, "target": request.target}
+    project_id = None
+    target_id = None
+    target_address = request.target
+
+    if request.target_id is not None:
+        # This is the ONLY enforcement point for target authorization —
+        # the AI planner, the frontend, and every other caller all funnel
+        # through here. UNKNOWN is rejected; nothing upstream can bypass it.
+        target = await db.get(Target, request.target_id)
+        if target is None:
+            raise HTTPException(status_code=404, detail="target not found")
+        if not is_executable(target):
+            raise HTTPException(
+                status_code=403,
+                detail=(
+                    f"target authorization status is {target.authorization_status.value}; "
+                    "mark it LAB, AUTHORIZED, or LOCAL before running jobs against it"
+                ),
+            )
+        project_id = target.project_id
+        target_id = target.id
+        target_address = target.address
+
+    full_params = {**request.options, "target": target_address}
     try:
         registry.build_command(request.tool, full_params)
     except registry.ToolValidationError as exc:
@@ -31,7 +56,9 @@ async def create_job(request: JobCreateRequest, db: AsyncSession = Depends(get_d
 
     job = Job(
         tool=request.tool,
-        target=request.target,
+        target=target_address,
+        project_id=project_id,
+        target_id=target_id,
         params=full_params,
         status=JobStatus.QUEUED,
     )
@@ -48,12 +75,18 @@ async def create_job(request: JobCreateRequest, db: AsyncSession = Depends(get_d
 @router.get("", response_model=list[JobResponse])
 async def list_jobs(
     status: JobStatus | None = Query(default=None),
+    project_id: uuid.UUID | None = Query(default=None),
+    target_id: uuid.UUID | None = Query(default=None),
     limit: int = Query(default=50, ge=1, le=200),
     db: AsyncSession = Depends(get_db),
 ) -> list[Job]:
     stmt = select(Job).order_by(Job.created_at.desc()).limit(limit)
     if status is not None:
         stmt = stmt.where(Job.status == status)
+    if project_id is not None:
+        stmt = stmt.where(Job.project_id == project_id)
+    if target_id is not None:
+        stmt = stmt.where(Job.target_id == target_id)
     result = await db.execute(stmt)
     return list(result.scalars().all())
 

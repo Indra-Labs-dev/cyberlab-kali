@@ -44,7 +44,9 @@ manual/non-tool step>", "target": "<target to use>", "options": {<tool-specific 
 Keep the plan to at most 6 steps, ordered from broad recon to more specific checks."""
 
 
-def build_planner_prompt(target: str, goal: str, available_tools: list[dict]) -> str:
+def build_planner_prompt(
+    target: str, goal: str, available_tools: list[dict], authorization_status: str | None = None
+) -> str:
     tools_desc = json.dumps(
         [
             {
@@ -56,4 +58,7 @@ def build_planner_prompt(target: str, goal: str, available_tools: list[dict]) ->
         ],
         indent=2,
     )
-    return f"Target: {target}\nGoal: {goal}\n\nAvailable tools:\n{tools_desc}\n"
+    authorization_line = ""
+    if authorization_status is not None:
+        authorization_line = f"Target authorization status: {authorization_status}\n"
+    return f"Target: {target}\n{authorization_line}Goal: {goal}\n\nAvailable tools:\n{tools_desc}\n"

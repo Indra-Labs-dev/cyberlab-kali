@@ -1,7 +1,7 @@
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, model_validator
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.ai.analyst import AIAnalyst
@@ -10,6 +10,7 @@ from app.ai.planner import AIMissionPlanner
 from app.ai.schemas import AnalysisResult, ChatResponse, MissionPlan
 from app.db.session import get_db
 from app.models.job import Job
+from app.models.target import Target
 
 router = APIRouter(prefix="/ai", tags=["ai"])
 
@@ -53,27 +54,67 @@ async def analyze_job(
 
 
 class PlanRequest(BaseModel):
-    target: str
+    # Either a free-text target (quick/unregistered) or target_id (a real
+    # Target, resolved server-side -- the model is never trusted with a real
+    # address it wasn't given, and never invents/chooses one).
+    target: str | None = None
+    target_id: uuid.UUID | None = None
     goal: str
+
+    @model_validator(mode="after")
+    def _require_target_or_target_id(self) -> "PlanRequest":
+        if not self.target and not self.target_id:
+            raise ValueError("either target or target_id is required")
+        return self
 
 
 @router.post("/plan", response_model=MissionPlan)
-async def plan_mission(request: PlanRequest, provider: OllamaProvider = Depends(get_provider)) -> MissionPlan:
+async def plan_mission(
+    request: PlanRequest, db: AsyncSession = Depends(get_db), provider: OllamaProvider = Depends(get_provider)
+) -> MissionPlan:
+    target_address = request.target
+    authorization_status = None
+    target_id = request.target_id
+
+    if request.target_id is not None:
+        target = await db.get(Target, request.target_id)
+        if target is None:
+            raise HTTPException(status_code=404, detail="target not found")
+        target_address = target.address
+        authorization_status = target.authorization_status.value
+
     planner = AIMissionPlanner(provider)
     try:
-        return await planner.plan(request.target, request.goal)
+        return await planner.plan(target_address, request.goal, target_id=target_id, authorization_status=authorization_status)
     except OllamaUnavailableError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
 
 
 class ChatRequest(BaseModel):
     message: str
+    # Optional context so "analyze this target" resolves to a real Target
+    # the AI is TOLD about, rather than something it has to invent.
+    target_id: uuid.UUID | None = None
 
 
 @router.post("/chat", response_model=ChatResponse)
-async def chat(request: ChatRequest, provider: OllamaProvider = Depends(get_provider)) -> ChatResponse:
+async def chat(
+    request: ChatRequest, db: AsyncSession = Depends(get_db), provider: OllamaProvider = Depends(get_provider)
+) -> ChatResponse:
+    system = CHAT_SYSTEM
+    if request.target_id is not None:
+        target = await db.get(Target, request.target_id)
+        if target is None:
+            raise HTTPException(status_code=404, detail="target not found")
+        system += (
+            f"\n\nActive target context (read-only -- you cannot change this): "
+            f"name={target.name!r}, address={target.address!r}, "
+            f"authorization_status={target.authorization_status.value}. "
+            f"If the user refers to 'this target' or 'the current target', they mean this one."
+        )
+
     try:
-        reply = await provider.generate(request.message, system=CHAT_SYSTEM)
+        reply = await provider.generate(request.message, system=system)
     except OllamaUnavailableError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
     return ChatResponse(reply=reply)

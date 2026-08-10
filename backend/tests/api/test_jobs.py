@@ -62,3 +62,52 @@ async def test_get_nonexistent_job_returns_404(client):
 async def test_cancel_nonexistent_job_returns_404(client):
     response = await client.post("/api/jobs/00000000-0000-0000-0000-000000000000/cancel")
     assert response.status_code == 404
+
+
+async def test_create_job_requires_target_or_target_id(client):
+    response = await client.post("/api/jobs", json={"tool": "nmap"})
+    assert response.status_code == 422
+
+
+async def test_create_job_with_nonexistent_target_id_404(client):
+    response = await client.post(
+        "/api/jobs", json={"tool": "nmap", "target_id": "00000000-0000-0000-0000-000000000000"}
+    )
+    assert response.status_code == 404
+
+
+async def test_create_job_rejects_unauthorized_unknown_target(client):
+    project = (await client.post("/api/projects", json={"name": "Authz Test Project"})).json()
+    target = (
+        await client.post(
+            f"/api/projects/{project['id']}/targets",
+            json={"name": "scanme", "hostname": "scanme.nmap.org", "target_type": "DOMAIN"},
+        )
+    ).json()
+    assert target["authorization_status"] == "UNKNOWN"
+
+    response = await client.post("/api/jobs", json={"tool": "nmap", "target_id": target["id"]})
+    assert response.status_code == 403
+
+
+@patch("app.api.routes.jobs.get_queue")
+async def test_create_job_with_authorized_target_id_succeeds_and_links_project(mock_get_queue, client):
+    mock_get_queue.return_value = MagicMock()
+
+    project = (await client.post("/api/projects", json={"name": "Authorized Project"})).json()
+    target = (
+        await client.post(
+            f"/api/projects/{project['id']}/targets",
+            json={"name": "kali", "hostname": "cyberlab-kali", "target_type": "CONTAINER"},
+        )
+    ).json()
+    assert target["authorization_status"] == "LAB"
+
+    response = await client.post(
+        "/api/jobs", json={"tool": "nmap", "target_id": target["id"], "options": {"ports": "9000"}}
+    )
+    assert response.status_code == 201
+    body = response.json()
+    assert body["target"] == "cyberlab-kali"
+    assert body["project_id"] == project["id"]
+    assert body["target_id"] == target["id"]

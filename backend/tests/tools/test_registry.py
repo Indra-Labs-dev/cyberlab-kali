@@ -8,6 +8,14 @@ def test_list_tools_includes_mvp_tools():
     assert {"nmap", "whatweb", "nikto"}.issubset(names)
 
 
+def test_every_tool_has_a_risk_level():
+    expected = {"nmap": "CAUTION", "whatweb": "SAFE", "nikto": "RESTRICTED"}
+    for tool in registry.list_tools():
+        if tool.name in expected:
+            assert tool.risk_level == expected[tool.name]
+        assert tool.risk_level in ("SAFE", "CAUTION", "RESTRICTED")
+
+
 def test_get_unknown_tool_raises():
     with pytest.raises(registry.ToolNotFoundError):
         registry.get_tool("metasploit")

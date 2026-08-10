@@ -2,7 +2,7 @@ import enum
 import uuid
 from datetime import datetime
 
-from sqlalchemy import JSON, DateTime, Enum, Integer, String, Text, text
+from sqlalchemy import JSON, DateTime, Enum, ForeignKey, Integer, String, Text, text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -22,7 +22,21 @@ class Job(Base):
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     tool: Mapped[str] = mapped_column(String(64), nullable=False)
+    # Free-text target string -- kept for backward compatibility and for
+    # quick ad-hoc scans that don't need a registered Target. When a job is
+    # created from a real Target (project_id/target_id set), this still
+    # holds the resolved address string, so existing code reading `target`
+    # directly (parsers, findings extraction, reports) needs no changes.
     target: Mapped[str] = mapped_column(String(512), nullable=False)
+    # ON DELETE SET NULL: deleting a Project/Target must never destroy job
+    # history. The `target` string above keeps the human-readable record
+    # regardless of whether the Target it came from still exists.
+    project_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("projects.id", ondelete="SET NULL"), nullable=True
+    )
+    target_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("targets.id", ondelete="SET NULL"), nullable=True
+    )
     params: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
     status: Mapped[JobStatus] = mapped_column(
         Enum(JobStatus, name="job_status"), nullable=False, default=JobStatus.QUEUED

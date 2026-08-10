@@ -33,6 +33,8 @@ cd backend
 .venv/bin/alembic upgrade head
 ```
 
+**Convention établie depuis la Phase 11** : toute migration touchant des tables existantes doit rester strictement additive (nouvelles tables, nouvelles colonnes nullable, `ForeignKey(..., ondelete="SET NULL")` plutôt que `CASCADE` quand la relation est optionnelle) — jamais de `DROP COLUMN`/`ALTER ... NOT NULL` sur une colonne déjà en usage sans un plan de backfill explicite. Avant toute migration non triviale sur un environnement contenant des données réelles, prendre un backup (`docker compose exec cyberlab-postgres pg_dump -U <user> <db> > backup.sql`) avant `alembic upgrade head`.
+
 ## Tests
 
 - Backend : `pytest backend/tests/`.

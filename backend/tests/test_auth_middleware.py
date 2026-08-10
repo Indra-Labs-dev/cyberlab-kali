@@ -1,3 +1,4 @@
+import pytest
 from fastapi.testclient import TestClient
 from httpx import ASGITransport, AsyncClient
 from starlette.websockets import WebSocketDisconnect
@@ -67,6 +68,52 @@ def test_websocket_rejects_missing_token_when_auth_enabled(monkeypatch):
     client = TestClient(app)
     try:
         with client.websocket_connect("/api/ws/jobs/00000000-0000-0000-0000-000000000000"):
+            raise AssertionError("connection should have been rejected")
+    except WebSocketDisconnect as exc:
+        assert exc.code == 4401
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "/api/tools",
+        "/api/jobs",
+        "/api/findings",
+        "/api/reports",
+        "/api/reports/00000000-0000-0000-0000-000000000000/download",
+        "/api/labs",
+        "/api/labs/definitions",
+        "/api/projects",
+        "/api/projects/00000000-0000-0000-0000-000000000000",
+        "/api/projects/00000000-0000-0000-0000-000000000000/targets",
+        "/api/targets",
+        "/api/targets/00000000-0000-0000-0000-000000000000",
+        "/api/targets/00000000-0000-0000-0000-000000000000/jobs",
+        "/api/ai/plan",
+        "/api/ai/chat",
+        "/api/ai/analyze/00000000-0000-0000-0000-000000000000",
+    ],
+)
+async def test_every_api_route_is_guarded_when_auth_enabled(monkeypatch, path):
+    """Regression test for 'forgotten' endpoints: every router mounted under
+    /api must be behind the auth middleware, not just the ones with explicit
+    tests. The middleware guards by path prefix regardless of HTTP method, so
+    a bare GET is enough to prove a POST-only route (e.g. /api/ai/plan) is
+    also guarded — routing never even happens before the 401.
+    """
+    settings = get_settings()
+    monkeypatch.setattr(settings, "auth_enabled", True)
+    async with await _client() as client:
+        response = await client.get(path)
+    assert response.status_code == 401
+
+
+def test_terminal_websocket_rejects_missing_token_when_auth_enabled(monkeypatch):
+    settings = get_settings()
+    monkeypatch.setattr(settings, "auth_enabled", True)
+    client = TestClient(app)
+    try:
+        with client.websocket_connect("/api/ws/terminal"):
             raise AssertionError("connection should have been rejected")
     except WebSocketDisconnect as exc:
         assert exc.code == 4401

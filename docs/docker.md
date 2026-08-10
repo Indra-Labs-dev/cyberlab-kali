@@ -40,8 +40,11 @@ Tous les ports sont bindés sur `127.0.0.1` uniquement (pas d'exposition réseau
 | `cyberlab-api` | FastAPI (REST + WebSocket) |
 | `cyberlab-worker` | Worker RQ (exécution des jobs) |
 | `cyberlab-kali` | Outils de sécurité (nmap/whatweb/nikto) + terminal PTY |
-| `cyberlab-labmanager` | Cycle de vie des labs Docker — seul service avec `docker.sock` |
+| `cyberlab-labmanager` | Cycle de vie des labs Docker (non-root, sans accès direct à `docker.sock` depuis la Phase 11) |
+| `cyberlab-docker-proxy` | Docker Socket Proxy — seul service avec `docker.sock` monté (lecture seule), n'expose que `CONTAINERS`/`NETWORKS`/`IMAGES`/`POST` à `cyberlab-labmanager` |
 | `cyberlab-postgres` / `cyberlab-redis` | Persistance / file de jobs |
+
+Voir [security.md](security.md) pour le détail de la bascule `docker.sock` → Docker Socket Proxy (Phase 11) et sa justification.
 
 ## Ollama
 

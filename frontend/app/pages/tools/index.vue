@@ -14,8 +14,15 @@ interface ToolDef {
   name: string;
   category: string;
   description: string;
+  risk_level: "SAFE" | "CAUTION" | "RESTRICTED";
   arguments: ArgumentDef[];
 }
+
+const riskColor: Record<string, string> = {
+  SAFE: "bg-emerald-500/15 text-emerald-400",
+  CAUTION: "bg-amber-500/15 text-amber-400",
+  RESTRICTED: "bg-red-500/15 text-red-400",
+};
 
 const { apiFetch } = useApi();
 const router = useRouter();
@@ -102,6 +109,7 @@ onMounted(loadTools);
             <div class="flex items-center gap-2">
               <span class="font-medium text-slate-200">{{ tool.name }}</span>
               <span class="rounded bg-slate-800 px-1.5 py-0.5 text-xs text-slate-500">{{ tool.category }}</span>
+              <span class="rounded px-1.5 py-0.5 text-xs" :class="riskColor[tool.risk_level]">{{ tool.risk_level }}</span>
             </div>
             <p class="mt-0.5 text-sm text-slate-500">{{ tool.description }}</p>
           </div>

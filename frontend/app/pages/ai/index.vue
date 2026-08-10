@@ -8,6 +8,7 @@ interface MissionStep {
   label: string;
   tool: string | null;
   target: string | null;
+  target_id: string | null;
   options: Record<string, unknown>;
   rationale: string;
 }
@@ -15,11 +16,30 @@ interface MissionStep {
 interface MissionPlan {
   goal: string;
   target: string;
+  target_id: string | null;
   steps: MissionStep[];
   raw_response: string | null;
 }
 
+interface Target {
+  id: string;
+  name: string;
+  hostname: string | null;
+  ip_address: string | null;
+  url: string | null;
+  authorization_status: string;
+}
+
 const { apiFetch } = useApi();
+
+// --- Shared target context ---
+const targets = ref<Target[]>([]);
+const activeTargetId = ref("");
+const activeTarget = computed(() => targets.value.find((t) => t.id === activeTargetId.value) || null);
+
+async function loadTargets() {
+  targets.value = await apiFetch<Target[]>("/api/targets");
+}
 
 // --- Chat ---
 const chatHistory = ref<ChatTurn[]>([]);
@@ -35,7 +55,7 @@ async function sendChat() {
   try {
     const res = await apiFetch<{ reply: string }>("/api/ai/chat", {
       method: "POST",
-      body: { message },
+      body: { message, target_id: activeTargetId.value || undefined },
     });
     chatHistory.value.push({ role: "assistant", content: res.reply });
   } catch (err: any) {
@@ -46,7 +66,7 @@ async function sendChat() {
 }
 
 // --- Mission Planner ---
-const planTarget = ref("");
+const planTargetFreeText = ref("");
 const planGoal = ref("");
 const planning = ref(false);
 const planError = ref("");
@@ -55,16 +75,16 @@ const runningStep = ref<number | null>(null);
 const stepResult = ref<Record<number, { ok: boolean; message: string }>>({});
 
 async function requestPlan() {
-  if (!planTarget.value || !planGoal.value) return;
+  if ((!activeTargetId.value && !planTargetFreeText.value) || !planGoal.value) return;
   planning.value = true;
   planError.value = "";
   plan.value = null;
   stepResult.value = {};
   try {
-    plan.value = await apiFetch<MissionPlan>("/api/ai/plan", {
-      method: "POST",
-      body: { target: planTarget.value, goal: planGoal.value },
-    });
+    const body = activeTargetId.value
+      ? { target_id: activeTargetId.value, goal: planGoal.value }
+      : { target: planTargetFreeText.value, goal: planGoal.value };
+    plan.value = await apiFetch<MissionPlan>("/api/ai/plan", { method: "POST", body });
   } catch (err: any) {
     planError.value = err?.data?.detail || "Planning failed";
   } finally {
@@ -76,10 +96,14 @@ async function runStep(step: MissionStep, index: number) {
   if (!step.tool) return;
   runningStep.value = index;
   try {
-    const job = await apiFetch<{ id: string }>("/api/jobs", {
-      method: "POST",
-      body: { tool: step.tool, target: step.target || plan.value?.target, options: step.options },
-    });
+    // A step carries target_id whenever the plan itself was requested
+    // against a registered Target (set server-side, never by the model) —
+    // running it then goes through the same authorization enforcement as
+    // every other job. Falls back to the free-text target otherwise.
+    const body = step.target_id
+      ? { tool: step.tool, target_id: step.target_id, options: step.options }
+      : { tool: step.tool, target: step.target || plan.value?.target, options: step.options };
+    const job = await apiFetch<{ id: string }>("/api/jobs", { method: "POST", body });
     stepResult.value[index] = { ok: true, message: `Started — job ${job.id}` };
   } catch (err: any) {
     stepResult.value[index] = { ok: false, message: err?.data?.detail || "Failed to start" };
@@ -87,11 +111,38 @@ async function runStep(step: MissionStep, index: number) {
     runningStep.value = null;
   }
 }
+
+function targetLabel(t: Target) {
+  const address = t.url || t.hostname || t.ip_address || "—";
+  return `${t.name} (${address}) — ${t.authorization_status}`;
+}
+
+onMounted(async () => {
+  await loadTargets();
+  const preselect = useRoute().query.target_id;
+  if (typeof preselect === "string" && targets.value.some((t) => t.id === preselect)) {
+    activeTargetId.value = preselect;
+  }
+});
 </script>
 
 <template>
   <div>
     <PageHeader title="AI Assistant" subtitle="Local analysis via Ollama — nothing here executes automatically" />
+
+    <div class="px-8 pt-6">
+      <label class="mb-1 block text-xs text-slate-500">Active target context (optional)</label>
+      <select
+        v-model="activeTargetId"
+        class="w-full max-w-md rounded-md border border-slate-700 bg-slate-950 px-3 py-1.5 text-sm text-slate-200"
+      >
+        <option value="">No active target — chat generally, plan against free text</option>
+        <option v-for="t in targets" :key="t.id" :value="t.id">{{ targetLabel(t) }}</option>
+      </select>
+      <p v-if="activeTarget" class="mt-1 text-xs text-slate-600">
+        The AI is told about this target's name, address, and authorization status — it can't invent or change it.
+      </p>
+    </div>
 
     <div class="grid grid-cols-1 gap-6 px-8 py-6 lg:grid-cols-2">
       <!-- Chat -->
@@ -138,11 +189,15 @@ async function runStep(step: MissionStep, index: number) {
         </p>
         <form class="mb-4 space-y-2" @submit.prevent="requestPlan">
           <input
-            v-model="planTarget"
+            v-if="!activeTargetId"
+            v-model="planTargetFreeText"
             type="text"
-            placeholder="Target, e.g. cyberlab-lab-dvwa-xxxx"
+            placeholder="Target, e.g. cyberlab-lab-dvwa-xxxx (or select an active target above)"
             class="w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-200 placeholder:text-slate-600"
           />
+          <p v-else class="rounded-md border border-slate-800 bg-slate-950/50 px-3 py-2 text-sm text-slate-400">
+            Using active target: {{ activeTarget ? targetLabel(activeTarget) : "" }}
+          </p>
           <input
             v-model="planGoal"
             type="text"
@@ -152,7 +207,7 @@ async function runStep(step: MissionStep, index: number) {
           <button
             type="submit"
             class="rounded-md bg-emerald-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-emerald-500 disabled:opacity-50"
-            :disabled="planning || !planTarget || !planGoal"
+            :disabled="planning || (!activeTargetId && !planTargetFreeText) || !planGoal"
           >
             {{ planning ? "Planning…" : "Propose a plan" }}
           </button>

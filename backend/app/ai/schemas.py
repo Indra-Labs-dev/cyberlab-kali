@@ -1,3 +1,4 @@
+import uuid
 from typing import Literal
 
 from pydantic import BaseModel, Field
@@ -18,6 +19,11 @@ class MissionStep(BaseModel):
     label: str
     tool: str | None = None
     target: str | None = None
+    # Set server-side (never by the model) when the plan was requested against
+    # a registered Target -- lets the frontend run a step via POST /api/jobs
+    # with target_id, so the same authorization enforcement as everywhere
+    # else applies. Never derived from anything the AI outputs.
+    target_id: uuid.UUID | None = None
     options: dict = Field(default_factory=dict)
     rationale: str = ""
 
@@ -25,6 +31,7 @@ class MissionStep(BaseModel):
 class MissionPlan(BaseModel):
     goal: str
     target: str
+    target_id: uuid.UUID | None = None
     steps: list[MissionStep] = Field(default_factory=list)
     raw_response: str | None = None
 

@@ -1,6 +1,7 @@
 name: nikto
 category: vulnerability_scan
 description: Web server vulnerability scanner.
+risk_level: RESTRICTED
 command:
   executable: nikto
 # No -output flag: nikto writes plain text to stdout by default. Passing

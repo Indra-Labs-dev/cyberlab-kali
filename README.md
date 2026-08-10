@@ -31,11 +31,9 @@ docker compose down
 
 ## État du projet
 
-Développement par phases (voir [CHANGELOG.md](CHANGELOG.md)). Les 10 phases sont complètes.
+Développement par phases (voir [CHANGELOG.md](CHANGELOG.md)). Les 11 phases sont complètes.
 
-**Fonctionnel de bout en bout, vérifié en conditions réelles :** Tool Registry (nmap/whatweb/nikto), Job Engine avec statut temps réel (WebSocket), terminal interactif confiné au conteneur Kali, Lab Manager (DVWA), IA locale (chat, analyse de scan, Mission Planner), Findings extraits automatiquement, Reports (HTML/Markdown/JSON/PDF), authentification API optionnelle.
-
-**Écart connu par rapport à la liste de succès initiale :** pas de modèle `Project`/`Target` dédié — un job prend directement une cible en texte libre. Les pages Projects/Targets existent dans la navigation mais affichent un état « pas encore implémenté » explicite plutôt que des données factices (voir `frontend/app/pages/{projects,targets}/index.vue`).
+**Fonctionnel de bout en bout, vérifié en conditions réelles :** Projects/Targets (modèle réel, autorisation comme frontière de sécurité), Tool Registry (nmap/whatweb/nikto, niveaux de risque SAFE/CAUTION/RESTRICTED), Job Engine avec statut temps réel (WebSocket) et rattachement optionnel à un Project/Target, terminal interactif confiné au conteneur Kali, Lab Manager (DVWA) piloté via un Docker Socket Proxy plutôt qu'un accès direct à `docker.sock`, IA locale contextualisée (chat, analyse de scan, Mission Planner — jamais d'exécution ni de modification d'autorisation par l'IA elle-même), Findings extraits automatiquement, Reports (HTML/Markdown/JSON/PDF), authentification API optionnelle.
 
 ## Documentation
 
