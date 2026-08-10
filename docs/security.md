@@ -33,7 +33,7 @@ Contrairement au Job Engine (arguments strictement validés, allowlist d'outils)
 
 - **Toujours confiné au conteneur Kali** : `cyberlab-api` (`backend/app/api/routes/terminal.py`) ne fait que relayer des frames WebSocket entre le navigateur et l'agent Kali — il n'ouvre jamais lui-même de PTY ni de shell. Le PTY est ouvert par `kali/agent/main.py` (`pty.openpty()` + `subprocess.Popen(["bash"], preexec_fn=os.setsid, ...)`), à l'intérieur du conteneur durci (voir ci-dessus : `cap_drop: ALL`, non-root, pas de `docker.sock`).
 - **Authentification interne** : la connexion WebSocket `cyberlab-api → cyberlab-kali` porte le même `KALI_AGENT_TOKEN` que l'exécution d'outils. Testé (`kali/agent/tests/test_terminal_auth.py`) : token manquant, incorrect, ou agent démarré sans `AGENT_TOKEN` configuré → `close(code=4401)` dans les trois cas (pas de repli silencieux vers "auth désactivée").
-- **Aucune authentification utilisateur pour l'instant** : n'importe qui atteignant `POST /api/ws/terminal` obtient un shell dans le conteneur Kali. C'est acceptable uniquement parce que CyberLab n'écoute que sur `127.0.0.1` par défaut (section 21). **Avant toute exposition au-delà de localhost, une authentification applicative sur cet endpoint est un prérequis bloquant**, pas une amélioration optionnelle (voir Phase 10).
+- **Authentification** : par défaut (`AUTH_ENABLED=false`), n'importe qui atteignant `WS /api/ws/terminal` obtient un shell dans le conteneur Kali — acceptable uniquement parce que CyberLab n'écoute que sur `127.0.0.1` par défaut. Avec `AUTH_ENABLED=true` (voir « Authentification API » ci-dessous), cet endpoint exige le même bearer token que le reste de l'API, requis en prérequis **avant toute exposition au-delà de localhost**.
 - **Cycle de vie du processus** : le PTY et le processus `bash` sont fermés/tués (`proc.terminate()` + `proc.wait()`) à la déconnexion — un bug de zombie process (le shell restait `<defunct>` faute de `wait()`) a été trouvé et corrigé pendant les tests de la Phase 6.
 
 ## Lab Manager — le seul service avec accès à `docker.sock`
@@ -50,6 +50,18 @@ Le Lab Manager (démarrer/arrêter/reset/supprimer des labs Docker vulnérables-
 
 Le Mission Planner (`backend/app/ai/planner.py`) **propose** un plan ; il n'appelle jamais `POST /api/jobs` lui-même. C'est le frontend, sur action explicite de l'utilisateur (bouton « Run » par étape), qui déclenche l'exécution — via le même endpoint et donc la **même validation stricte du Tool Registry** que la page Tools (voir [ai.md](ai.md) pour des exemples réels d'options hallucinées par le modèle et rejetées par le registre avant tout appel à l'agent Kali). Un nom d'outil halluciné (qui n'existe pas dans le registre) est explicitement supprimé de l'étape (`step.tool = None`) plutôt que transmis tel quel.
 
+## Authentification API (`AUTH_ENABLED`)
+
+Désactivée par défaut (`AUTH_ENABLED=false` dans `.env.example`) : CyberLab n'écoute que sur `127.0.0.1` par défaut, donc pas de chemin réseau non fiable vers l'API. `API_SECRET_KEY` (déjà présent depuis la Phase 1, jamais branché avant la Phase 10) sert de bearer token dès que `AUTH_ENABLED=true`.
+
+- **Middleware ASGI pur** (`backend/app/core/auth_middleware.py`), pas un `BaseHTTPMiddleware` — nécessaire pour pouvoir aussi protéger les upgrades WebSocket, pas seulement les requêtes HTTP classiques.
+- **`/api/health` reste toujours accessible sans token** (healthcheck Docker non authentifié par nature — voir `docker-compose.yml`).
+- **HTTP** : `Authorization: Bearer <API_SECRET_KEY>`.
+- **WebSocket** : un navigateur ne peut pas fixer d'en-tête personnalisé sur un handshake WS — le token est donc accepté en paramètre de requête (`?token=...`) pour `/api/ws/jobs/{id}` et `/api/ws/terminal`. Rejet conforme à la spec ASGI : l'événement `websocket.connect` initial est bien reçu avant l'envoi de `websocket.close(code=4401)` (sinon certains serveurs ASGI se plaignent d'une réponse avant réception du premier message).
+- **Frontend** : `docker-compose.yml` calcule `NUXT_PUBLIC_API_TOKEN` à partir de `API_SECRET_KEY` uniquement si `AUTH_ENABLED` est défini (`${AUTH_ENABLED:+${API_SECRET_KEY}}`) ; `useApi()` (`frontend/app/composables/useApi.ts`) ajoute automatiquement l'en-tête `Authorization` sur toutes les requêtes (`apiFetch`) et le paramètre `?token=` sur les WebSocket et les téléchargements de rapports (`<a href>`, qui ne peuvent pas non plus porter d'en-tête personnalisé).
+- **Testé** (`backend/tests/test_auth_middleware.py`, 8 tests) : désactivé par défaut, `/api/health` toujours joignable, route protégée rejetée sans token / avec mauvais token / acceptée avec le bon token, chemins hors `/api` non gardés, WebSocket rejetée sans token (code `4401`) et acceptée avec `?token=`.
+- **Vérifié en conditions réelles** : stack complète relancée avec `AUTH_ENABLED=true`, confirmé que `curl` sans token reçoit `401`, avec le bon token `200`, et que l'interface Nuxt continue de fonctionner de façon transparente (dashboard, lancement d'un scan, mise à jour temps réel du statut via WebSocket) sans aucun changement visible pour l'utilisateur.
+
 ## Réseau
 
 - Tous les ports hôte sont bindés sur `127.0.0.1` uniquement.
@@ -61,8 +73,24 @@ Le Mission Planner (`backend/app/ai/planner.py`) **propose** un plan ; il n'appe
 - Aucun secret en dur dans le code ou committé dans Git (`.env` est dans `.gitignore`).
 - `API_SECRET_KEY`, `POSTGRES_PASSWORD`, `KALI_AGENT_TOKEN`, `LABMANAGER_TOKEN` générés aléatoirement (`openssl rand -hex`) dans l'environnement de développement local.
 
-## À faire (Phase 10 — durcissement)
+## Phase 10 — Audit de durcissement
 
-- Authentification utilisateur sur l'API si exposée au-delà de `localhost` — **bloquant en particulier pour `/api/ws/terminal`** (shell complet, sans allowlist) et pour `/api/labs` (contrôle indirect de `docker.sock`), voir ci-dessus.
-- Audit des dépendances (`pip-audit`, `npm audit`).
-- Revue CORS/WebSocket.
+### Fait pendant cet audit
+
+- **Authentification API optionnelle** ajoutée (voir ci-dessus) — fermait le dernier écart de la spec section 21 (« authentification si exposée au réseau »).
+- **XSS trouvée et corrigée dans les rapports HTML** : `html_renderer.py` utilisait `jinja2.Template(...)` sans `autoescape=True`. Les titres/descriptions de findings peuvent refléter du contenu venant de la cible scannée (sortie d'outil, ex. nikto renvoyant un `<script>` brut trouvé sur une page) — sans échappement, ce contenu s'injectait tel quel dans le rapport HTML. Corrigé avec `autoescape=True` ; test de non-régression ajouté (`test_render_html_escapes_finding_content_from_scanned_targets`).
+- **Injection de balisage trouvée et corrigée dans les rapports PDF** : `pdf_renderer.py` interpolait le même type de contenu directement dans le balisage XML-like de reportlab (`<font>`, `<b>`) sans échappement — un contenu malformé pouvait casser la génération du PDF, ou un contenu conçu à cet effet pouvait usurper la mise en forme d'un rapport (ex. masquer du texte avec `<font color="white">`). Corrigé avec `xml.sax.saxutils.escape` sur toutes les valeurs issues des données ; test de non-régression ajouté.
+- **Audit de dépendances** (`pip-audit`, `npm audit`) :
+  - `npm audit` (frontend) : 0 vulnérabilité.
+  - `pip-audit` (backend) : 11 CVE sur 3 paquets. `python-dotenv` (1.0.1→1.2.2) et `jinja2` (3.1.5→3.1.6) mis à jour (bumps mineurs, sans risque). `starlette` (0.41.3, 6 CVE) nécessite de passer à une version majeure ultérieure de FastAPI incompatible avec la contrainte actuelle (`fastapi==0.115.6` épingle `starlette<0.42`) — **non corrigé dans cette passe**, mise à niveau différée pour éviter une bascule majeure non testée en fin de session ; à traiter dans un futur cycle avec la suite de tests complète comme filet de sécurité.
+- **Revue de code** : recherche systématique de `shell=True`, `os.system`/`os.popen`, `eval`/`exec`, `pickle`, SQL par f-string — aucune occurrence dans `backend/`, `kali/agent/`, `labmanager/`.
+- **Revue CORS** : `allow_origins` n'est jamais `"*"` (limité à `CORS_ORIGINS`, par défaut l'origine du frontend uniquement) ; combiné à `allow_credentials=True`, un wildcard serait de toute façon rejeté par les navigateurs — configuration actuelle saine.
+- **Revue des conteneurs** : `USER` non-root partout sauf `cyberlab-labmanager` (nécessaire, voir plus haut — accès `docker.sock`) ; aucun autre service n'a `privileged: true` ni `docker.sock`.
+
+### Connu, accepté ou différé
+
+- **`starlette` 0.41.3** : 6 CVE non corrigées (nécessite une bascule majeure de FastAPI). Voir ci-dessus.
+- **`cyberlab-labmanager` tourne en root** : nécessaire pour `docker.sock` ; le risque est accepté et isolé (un seul service étroit) plutôt que masqué — voir la section Lab Manager.
+- **Pas de rate limiting** sur l'API — un acteur avec accès réseau à l'API (donc déjà authentifié si `AUTH_ENABLED=true`, ou sur `localhost` sinon) pourrait lancer un grand nombre de jobs/scans en boucle. Non traité dans cette passe ; à ajouter (ex. `slowapi`) avant toute exposition multi-utilisateurs.
+- **Annulation d'un job `RUNNING`** reste best-effort côté processus distant (voir [api.md](api.md)).
+- **Markdown** : le rendu Markdown n'échappe pas le HTML embarqué (le Markdown standard autorise le HTML en passthrough) — risque uniquement si le Markdown généré est lui-même repassé dans un moteur Markdown→HTML non assainissant en aval ; non modifié pour ne pas casser la syntaxe Markdown légitime, mais documenté ici comme angle mort connu.

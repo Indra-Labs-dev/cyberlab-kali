@@ -7,6 +7,9 @@ export default defineNuxtConfig({
     public: {
       apiBase: process.env.NUXT_PUBLIC_API_BASE || "http://localhost:8300",
       wsBase: process.env.NUXT_PUBLIC_WS_BASE || "ws://localhost:8300",
+      // Only needed if the backend is started with AUTH_ENABLED=true (see
+      // docs/security.md) -- empty by default, matching the API's own default.
+      apiToken: process.env.NUXT_PUBLIC_API_TOKEN || "",
     },
   },
   nitro: {

@@ -19,7 +19,7 @@ interface LabInstance {
   created_at: string | null;
 }
 
-const { apiUrl } = useApi();
+const { apiFetch } = useApi();
 
 const definitions = ref<LabDefinition[]>([]);
 const labs = ref<LabInstance[]>([]);
@@ -30,8 +30,8 @@ async function loadAll() {
   loading.value = true;
   try {
     [definitions.value, labs.value] = await Promise.all([
-      $fetch<LabDefinition[]>(apiUrl("/api/labs/definitions")),
-      $fetch<LabInstance[]>(apiUrl("/api/labs")),
+      apiFetch<LabDefinition[]>("/api/labs/definitions"),
+      apiFetch<LabInstance[]>("/api/labs"),
     ]);
   } finally {
     loading.value = false;
@@ -41,7 +41,7 @@ async function loadAll() {
 async function createLab(definitionName: string) {
   busy.value = `create:${definitionName}`;
   try {
-    await $fetch(apiUrl(`/api/labs?definition=${definitionName}`), { method: "POST" });
+    await apiFetch(`/api/labs?definition=${definitionName}`, { method: "POST" });
     await loadAll();
   } finally {
     busy.value = null;
@@ -51,7 +51,7 @@ async function createLab(definitionName: string) {
 async function labAction(labId: string, action: "start" | "stop" | "reset") {
   busy.value = labId;
   try {
-    await $fetch(apiUrl(`/api/labs/${labId}/${action}`), { method: "POST" });
+    await apiFetch(`/api/labs/${labId}/${action}`, { method: "POST" });
     await loadAll();
   } finally {
     busy.value = null;
@@ -61,7 +61,7 @@ async function labAction(labId: string, action: "start" | "stop" | "reset") {
 async function deleteLab(labId: string) {
   busy.value = labId;
   try {
-    await $fetch(apiUrl(`/api/labs/${labId}`), { method: "DELETE" });
+    await apiFetch(`/api/labs/${labId}`, { method: "DELETE" });
     await loadAll();
   } finally {
     busy.value = null;

@@ -31,7 +31,11 @@ docker compose down
 
 ## État du projet
 
-Développement par phases (voir [CHANGELOG.md](CHANGELOG.md)). Phase actuelle : **Phase 9 — Findings + Reports**.
+Développement par phases (voir [CHANGELOG.md](CHANGELOG.md)). Les 10 phases sont complètes.
+
+**Fonctionnel de bout en bout, vérifié en conditions réelles :** Tool Registry (nmap/whatweb/nikto), Job Engine avec statut temps réel (WebSocket), terminal interactif confiné au conteneur Kali, Lab Manager (DVWA), IA locale (chat, analyse de scan, Mission Planner), Findings extraits automatiquement, Reports (HTML/Markdown/JSON/PDF), authentification API optionnelle.
+
+**Écart connu par rapport à la liste de succès initiale :** pas de modèle `Project`/`Target` dédié — un job prend directement une cible en texte libre. Les pages Projects/Targets existent dans la navigation mais affichent un état « pas encore implémenté » explicite plutôt que des données factices (voir `frontend/app/pages/{projects,targets}/index.vue`).
 
 ## Documentation
 

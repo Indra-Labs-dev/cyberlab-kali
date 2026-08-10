@@ -1,5 +1,10 @@
 from jinja2 import Template
 
+# autoescape=True is required: finding titles/descriptions/evidence can
+# contain content reflecting the scanned target (tool output), e.g. a nikto
+# finding echoing a page's raw <script> tag. Without escaping, a malicious
+# or compromised scan target could inject script into the HTML report that
+# executes when someone opens it in a browser.
 _SEVERITY_COLORS = {
     "INFO": "#64748b",
     "LOW": "#0891b2",
@@ -78,7 +83,8 @@ _TEMPLATE = Template(
   {% endfor %}
 </body>
 </html>
-"""
+""",
+    autoescape=True,
 )
 
 

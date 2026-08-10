@@ -7,14 +7,14 @@ interface Job {
   created_at: string;
 }
 
-const { apiUrl } = useApi();
+const { apiFetch } = useApi();
 const jobs = ref<Job[]>([]);
 const loading = ref(true);
 
 async function loadJobs() {
   loading.value = true;
   try {
-    jobs.value = await $fetch<Job[]>(apiUrl("/api/jobs?limit=100"));
+    jobs.value = await apiFetch<Job[]>("/api/jobs?limit=100");
   } finally {
     loading.value = false;
   }

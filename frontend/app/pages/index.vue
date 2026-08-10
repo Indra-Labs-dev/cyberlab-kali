@@ -7,7 +7,7 @@ interface Job {
   created_at: string;
 }
 
-const { apiUrl } = useApi();
+const { apiFetch } = useApi();
 
 const apiStatus = ref<"checking" | "ok" | "error">("checking");
 const dbStatus = ref<"checking" | "ok" | "error">("checking");
@@ -21,26 +21,26 @@ const activeJobs = computed(() => recentJobs.value.filter((j) => j.status === "Q
 
 async function loadStatus() {
   try {
-    await $fetch(apiUrl("/api/health"));
+    await apiFetch("/api/health");
     apiStatus.value = "ok";
   } catch {
     apiStatus.value = "error";
   }
   try {
-    await $fetch(apiUrl("/api/health/db"));
+    await apiFetch("/api/health/db");
     dbStatus.value = "ok";
   } catch {
     dbStatus.value = "error";
   }
   try {
-    const res = await $fetch<{ status: string; tools_available?: string[] }>(apiUrl("/api/health/kali"));
+    const res = await apiFetch<{ status: string; tools_available?: string[] }>("/api/health/kali");
     kaliStatus.value = res.status === "ok" ? "ok" : "unreachable";
     kaliDetail.value = res.tools_available?.join(", ");
   } catch {
     kaliStatus.value = "unreachable";
   }
   try {
-    const res = await $fetch<{ status: string; models?: string[] }>(apiUrl("/api/health/ollama"));
+    const res = await apiFetch<{ status: string; models?: string[] }>("/api/health/ollama");
     aiStatus.value = res.status === "ok" ? "ok" : "unreachable";
     aiDetail.value = res.models?.join(", ");
   } catch {
@@ -50,7 +50,7 @@ async function loadStatus() {
 
 async function loadJobs() {
   try {
-    recentJobs.value = await $fetch<Job[]>(apiUrl("/api/jobs?limit=8"));
+    recentJobs.value = await apiFetch<Job[]>("/api/jobs?limit=8");
   } catch {
     recentJobs.value = [];
   }

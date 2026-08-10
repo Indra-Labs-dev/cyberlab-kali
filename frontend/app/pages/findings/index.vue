@@ -12,7 +12,7 @@ interface Finding {
   created_at: string;
 }
 
-const { apiUrl } = useApi();
+const { apiFetch } = useApi();
 
 const findings = ref<Finding[]>([]);
 const loading = ref(true);
@@ -30,7 +30,7 @@ async function loadFindings() {
   loading.value = true;
   try {
     const query = severityFilter.value ? `?severity=${severityFilter.value}&limit=200` : "?limit=200";
-    findings.value = await $fetch<Finding[]>(apiUrl(`/api/findings${query}`));
+    findings.value = await apiFetch<Finding[]>(`/api/findings${query}`);
   } finally {
     loading.value = false;
   }

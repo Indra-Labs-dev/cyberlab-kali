@@ -62,8 +62,39 @@ def test_render_html_contains_findings_and_escapes_nothing_unexpected():
     assert "10.0.0.1" in content
 
 
+def test_render_html_escapes_finding_content_from_scanned_targets():
+    # Finding titles/descriptions can reflect content from the scanned target
+    # (tool output) -- e.g. nikto echoing a page's raw <script> tag. The HTML
+    # report must escape this rather than injecting it verbatim.
+    malicious_data = json.loads(json.dumps(SAMPLE_DATA))  # deep copy
+    malicious_data["findings"][0]["title"] = "<script>alert(document.cookie)</script>"
+    malicious_data["findings"][0]["description"] = "<img src=x onerror=alert(1)>"
+
+    content, _ = render("html", malicious_data)
+
+    assert "<script>alert(document.cookie)</script>" not in content
+    assert "<img src=x onerror=alert(1)>" not in content
+    assert "&lt;script&gt;" in content
+
+
 def test_render_pdf_returns_base64_encoded_bytes():
     content, is_binary = render("pdf", SAMPLE_DATA)
+    assert is_binary is True
+    import base64
+
+    raw = base64.b64decode(content)
+    assert raw[:4] == b"%PDF"
+
+
+def test_render_pdf_does_not_crash_on_markup_like_finding_content():
+    # reportlab's Paragraph interprets a small XML-like markup subset; finding
+    # content containing something that looks like markup (e.g. an unclosed
+    # <b> tag reflected from a scanned page) must not break PDF generation.
+    malicious_data = json.loads(json.dumps(SAMPLE_DATA))
+    malicious_data["findings"][0]["title"] = "<b>unclosed bold & <font color='white'>hidden text"
+    malicious_data["findings"][0]["description"] = "<script>alert(1)</script> & other <unclosed"
+
+    content, is_binary = render("pdf", malicious_data)
     assert is_binary is True
     import base64
 

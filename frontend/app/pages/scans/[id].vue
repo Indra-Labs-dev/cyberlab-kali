@@ -26,7 +26,7 @@ interface Job {
 }
 
 const route = useRoute();
-const { apiUrl } = useApi();
+const { apiFetch } = useApi();
 const jobId = route.params.id as string;
 
 const job = ref<Job | null>(null);
@@ -47,7 +47,7 @@ async function analyzeWithAI() {
   analyzing.value = true;
   analyzeError.value = "";
   try {
-    const analysis = await $fetch<AnalysisResult>(apiUrl(`/api/ai/analyze/${jobId}`), { method: "POST" });
+    const analysis = await apiFetch<AnalysisResult>(`/api/ai/analyze/${jobId}`, { method: "POST" });
     if (job.value) job.value.ai_analysis = analysis;
   } catch (err: any) {
     analyzeError.value = err?.data?.detail || "AI analysis failed";
@@ -58,7 +58,7 @@ async function analyzeWithAI() {
 
 async function loadJob() {
   try {
-    job.value = await $fetch<Job>(apiUrl(`/api/jobs/${jobId}`));
+    job.value = await apiFetch<Job>(`/api/jobs/${jobId}`);
   } finally {
     loading.value = false;
   }
@@ -67,7 +67,7 @@ async function loadJob() {
 async function cancelJob() {
   cancelling.value = true;
   try {
-    job.value = await $fetch<Job>(apiUrl(`/api/jobs/${jobId}/cancel`), { method: "POST" });
+    job.value = await apiFetch<Job>(`/api/jobs/${jobId}/cancel`, { method: "POST" });
   } finally {
     cancelling.value = false;
   }

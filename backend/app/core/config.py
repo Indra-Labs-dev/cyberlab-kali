@@ -10,6 +10,11 @@ class Settings(BaseSettings):
     app_name: str = "CyberLab API"
     environment: str = "development"
     api_secret_key: str = "change-me-in-production"
+    # Disabled by default: CyberLab binds to 127.0.0.1 only out of the box, so
+    # there's no untrusted network path to the API. Set AUTH_ENABLED=true
+    # (and a real API_SECRET_KEY) before exposing it beyond localhost — see
+    # docs/security.md.
+    auth_enabled: bool = False
 
     postgres_host: str = "cyberlab-postgres"
     postgres_port: int = 5432

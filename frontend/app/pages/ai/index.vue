@@ -19,7 +19,7 @@ interface MissionPlan {
   raw_response: string | null;
 }
 
-const { apiUrl } = useApi();
+const { apiFetch } = useApi();
 
 // --- Chat ---
 const chatHistory = ref<ChatTurn[]>([]);
@@ -33,7 +33,7 @@ async function sendChat() {
   chatInput.value = "";
   chatBusy.value = true;
   try {
-    const res = await $fetch<{ reply: string }>(apiUrl("/api/ai/chat"), {
+    const res = await apiFetch<{ reply: string }>("/api/ai/chat", {
       method: "POST",
       body: { message },
     });
@@ -61,7 +61,7 @@ async function requestPlan() {
   plan.value = null;
   stepResult.value = {};
   try {
-    plan.value = await $fetch<MissionPlan>(apiUrl("/api/ai/plan"), {
+    plan.value = await apiFetch<MissionPlan>("/api/ai/plan", {
       method: "POST",
       body: { target: planTarget.value, goal: planGoal.value },
     });
@@ -76,7 +76,7 @@ async function runStep(step: MissionStep, index: number) {
   if (!step.tool) return;
   runningStep.value = index;
   try {
-    const job = await $fetch<{ id: string }>(apiUrl("/api/jobs"), {
+    const job = await apiFetch<{ id: string }>("/api/jobs", {
       method: "POST",
       body: { tool: step.tool, target: step.target || plan.value?.target, options: step.options },
     });

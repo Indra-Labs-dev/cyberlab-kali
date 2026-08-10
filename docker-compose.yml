@@ -167,6 +167,9 @@ services:
       NUXT_PUBLIC_API_BASE: http://localhost:${API_PORT:-8300}
       NUXT_PUBLIC_WS_BASE: ws://localhost:${API_PORT:-8300}
       NUXT_API_PROXY_TARGET: http://cyberlab-api:8000/api
+      # Only meaningful when the API is started with AUTH_ENABLED=true; empty
+      # by default. Must match the API's API_SECRET_KEY. See docs/security.md.
+      NUXT_PUBLIC_API_TOKEN: ${AUTH_ENABLED:+${API_SECRET_KEY}}
     ports:
       - "127.0.0.1:${FRONTEND_PORT:-3300}:3000"
     networks:

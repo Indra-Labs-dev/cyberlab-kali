@@ -1,5 +1,54 @@
 # Changelog
 
+## Unreleased — Phase 10 — Security hardening pass
+
+- **Optional bearer-token authentication** for the API (`AUTH_ENABLED`, disabled
+  by default — CyberLab binds to `127.0.0.1` only out of the box). Pure ASGI
+  middleware (`backend/app/core/auth_middleware.py`, not `BaseHTTPMiddleware`)
+  so it can also guard WebSocket upgrades, not just HTTP. `/api/health` stays
+  reachable unauthenticated (container healthchecks). WebSocket auth via
+  `?token=` query param (browsers can't set custom headers on a WS handshake);
+  spec-compliant rejection (receives `websocket.connect` before sending
+  `websocket.close(code=4401)`). Closes a real gap: `API_SECRET_KEY` had
+  existed unused in config since Phase 1. Frontend (`useApi.ts`) auto-attaches
+  the token via `apiFetch`/`wsUrl`/`downloadUrl` when
+  `NUXT_PUBLIC_API_TOKEN` is set; `docker-compose.yml` wires it from
+  `API_SECRET_KEY` only when `AUTH_ENABLED` is set. 8 new tests
+  (`backend/tests/test_auth_middleware.py`). Verified live: full stack
+  restarted with `AUTH_ENABLED=true`, confirmed 401 without a token / 200
+  with the right one via curl, and the Nuxt UI kept working transparently
+  (dashboard, running a scan, live WebSocket status) with zero visible
+  change for the user; then reverted to the disabled default.
+- **Real XSS found and fixed** in HTML reports: `html_renderer.py` used
+  `jinja2.Template(...)` without `autoescape=True`. Finding titles/
+  descriptions can reflect content from the scanned target (tool output,
+  e.g. nikto echoing a raw `<script>` tag found on a page) — without
+  escaping, that content was injected verbatim into the report HTML.
+  Fixed with `autoescape=True`; regression test added.
+- **Real markup-injection issue found and fixed** in PDF reports:
+  `pdf_renderer.py` interpolated the same kind of scan-derived content
+  directly into reportlab's XML-like Paragraph markup unescaped — could
+  break PDF generation on malformed input, or let crafted content spoof
+  report formatting (e.g. `<font color="white">` to hide text). Fixed with
+  `xml.sax.saxutils.escape` on every data-derived value; regression test
+  added.
+- Dependency audit: `npm audit` clean (0 vulnerabilities). `pip-audit`
+  found 11 CVEs across 3 packages; bumped `python-dotenv` (1.0.1->1.2.2)
+  and `jinja2` (3.1.5->3.1.6), both safe patch versions. `starlette`
+  (0.41.3, 6 CVEs) needs a FastAPI major-version bump incompatible with
+  the current pin (`fastapi==0.115.6` requires `starlette<0.42`) --
+  deferred rather than rushed this late without a full regression pass;
+  tracked in docs/security.md.
+- Code review swept for `shell=True`, `os.system`/`os.popen`, `eval`/
+  `exec`, `pickle`, f-string SQL across backend/kali-agent/labmanager --
+  no occurrences found.
+- Reviewed CORS (never wildcard, scoped to the frontend origin) and
+  container users (non-root everywhere except `cyberlab-labmanager`,
+  which needs `docker.sock` -- documented, accepted trade-off).
+- Documented remaining known gaps rather than silently leaving them
+  unstated: starlette CVEs, no API rate limiting, best-effort RUNNING-job
+  cancellation, Markdown reports not HTML-escaping embedded content.
+
 ## Unreleased — Phase 9 — Findings + Reports
 
 - Finding model (`backend/app/models/finding.py`): job_id, target, source_tool,

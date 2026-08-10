@@ -15,7 +15,7 @@ interface ReportMeta {
   created_at: string;
 }
 
-const { apiUrl } = useApi();
+const { apiFetch, downloadUrl } = useApi();
 
 const jobs = ref<Job[]>([]);
 const reports = ref<ReportMeta[]>([]);
@@ -32,8 +32,8 @@ async function loadAll() {
   loading.value = true;
   try {
     [jobs.value, reports.value] = await Promise.all([
-      $fetch<Job[]>(apiUrl("/api/jobs?limit=100")),
-      $fetch<ReportMeta[]>(apiUrl("/api/reports")),
+      apiFetch<Job[]>("/api/jobs?limit=100"),
+      apiFetch<ReportMeta[]>("/api/reports"),
     ]);
   } finally {
     loading.value = false;
@@ -50,7 +50,7 @@ async function generateReport() {
   generating.value = true;
   generateError.value = "";
   try {
-    await $fetch(apiUrl("/api/reports"), {
+    await apiFetch("/api/reports", {
       method: "POST",
       body: { title: title.value, job_ids: Array.from(selectedJobIds.value), format: format.value },
     });
@@ -63,8 +63,8 @@ async function generateReport() {
   }
 }
 
-function downloadUrl(reportId: string) {
-  return apiUrl(`/api/reports/${reportId}/download`);
+function reportDownloadUrl(reportId: string) {
+  return downloadUrl(`/api/reports/${reportId}/download`);
 }
 
 onMounted(loadAll);
@@ -138,7 +138,7 @@ onMounted(loadAll);
               </p>
             </div>
             <a
-              :href="downloadUrl(report.id)"
+              :href="reportDownloadUrl(report.id)"
               class="shrink-0 rounded-md border border-slate-700 px-2.5 py-1 text-xs text-slate-300 hover:bg-slate-800"
             >
               Download

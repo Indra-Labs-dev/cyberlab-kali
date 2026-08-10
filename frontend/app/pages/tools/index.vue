@@ -17,7 +17,7 @@ interface ToolDef {
   arguments: ArgumentDef[];
 }
 
-const { apiUrl } = useApi();
+const { apiFetch } = useApi();
 const router = useRouter();
 
 const tools = ref<ToolDef[]>([]);
@@ -30,7 +30,7 @@ const submitError = ref<Record<string, string>>({});
 async function loadTools() {
   loading.value = true;
   try {
-    tools.value = await $fetch<ToolDef[]>(apiUrl("/api/tools"));
+    tools.value = await apiFetch<ToolDef[]>("/api/tools");
   } finally {
     loading.value = false;
   }
@@ -70,7 +70,7 @@ async function runTool(tool: ToolDef) {
   });
 
   try {
-    const job = await $fetch<{ id: string }>(apiUrl("/api/jobs"), {
+    const job = await apiFetch<{ id: string }>("/api/jobs", {
       method: "POST",
       body: { tool: tool.name, target, options },
     });
