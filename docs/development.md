@@ -35,5 +35,8 @@ cd backend
 
 ## Tests
 
-- Backend : `pytest` (voir `backend/tests/`).
+- Backend : `pytest backend/tests/`.
+- Agent Kali : `pytest kali/agent/tests/`.
+- Lab Manager : `pytest labmanager/tests/`.
+- **Exécuter ces trois suites séparément**, pas dans une seule commande `pytest` combinée : `kali/agent/tests/` et `labmanager/tests/` sont chacun un package nommé `tests`, ce qui provoque une collision d'import si on les collecte ensemble. Cohérent avec le fait que ce sont des services déployés indépendamment (images Docker séparées).
 - Frontend : à ajouter (Vitest / `@nuxt/test-utils`) au fur et à mesure des phases.

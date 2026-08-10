@@ -1,5 +1,40 @@
 # Changelog
 
+## Unreleased — Phase 7 — Lab Manager
+
+- New `cyberlab-labmanager` service (`labmanager/`): the only service in the
+  stack with `docker.sock` mounted, isolated from `cyberlab-api`/`cyberlab-worker`.
+  Resolves the tension between "never give the backend docker.sock" and
+  needing to actually control Docker to run vulnerable-by-design labs — by
+  containing that access to one narrow, single-purpose service instead.
+- Declarative lab catalog (`labmanager/definitions/*.yaml`), same pattern as
+  the Tool Registry. One lab to start: DVWA (`vulnerables/web-dvwa`).
+- Lifecycle via Docker labels as the single source of truth (no duplicated
+  state in Postgres): create/start/stop/reset/delete/list, each lab on its
+  own Docker network plus a connection to `cyberlab-kali-net` so the Kali
+  container can scan it by name, host port published on 127.0.0.1 only.
+- `cyberlab-api` proxies `GET/POST /api/labs...` to the lab manager over an
+  internal authenticated HTTP call (`backend/app/api/routes/labs.py`), same
+  shared-token pattern as the Kali agent.
+- Real bug found and fixed via end-to-end testing: the Docker SDK is
+  synchronous; calling it directly inside an `async def` FastAPI route
+  blocked the entire event loop for the duration of an image pull —
+  including `/health`, making the service fully unresponsive meanwhile.
+  Fixed by offloading every Docker SDK call to a thread
+  (`loop.run_in_executor`).
+- Frontend `/labs` page: running labs with live status/URL and
+  start/stop/reset/delete actions, plus a launchable catalog.
+- `docs/security.md` documents the `docker.sock` trade-off honestly: it's
+  still host-root-equivalent access, container-level hardening (cap_drop,
+  no-new-privileges) would be security theater given the socket mount — the
+  real mitigation is functional isolation to one narrow service.
+- Verified end-to-end in the actual browser: launched DVWA from the UI,
+  confirmed it's reachable both from the host and from the Kali container
+  (by container name), tested stop/start/reset, deleted it and confirmed
+  both the container and its dedicated network were fully removed.
+- 8 new tests (`labmanager/tests/`): lab catalog validation, and auth
+  rejection (missing/wrong/unset token) for the lab manager's endpoints.
+
 ## Unreleased — Phase 6 — Integrated terminal
 
 - Kali agent (`kali/agent/main.py`) gains a `WS /terminal` endpoint: opens a real PTY (`pty.openpty()` + `bash` via `subprocess.Popen(preexec_fn=os.setsid)`), relays stdin/stdout/resize as JSON frames, authenticated with the same shared `KALI_AGENT_TOKEN` as tool execution.

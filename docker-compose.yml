@@ -2,8 +2,10 @@ name: cyberlab
 
 networks:
   cyberlab-backend:
+    name: cyberlab-backend
     driver: bridge
   cyberlab-kali-net:
+    name: cyberlab-kali-net
     driver: bridge
 
 volumes:
@@ -68,6 +70,8 @@ services:
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3300}
       KALI_AGENT_URL: http://cyberlab-kali:9000
       KALI_AGENT_TOKEN: ${KALI_AGENT_TOKEN:?KALI_AGENT_TOKEN must be set in .env}
+      LABMANAGER_URL: http://cyberlab-labmanager:9100
+      LABMANAGER_TOKEN: ${LABMANAGER_TOKEN:?LABMANAGER_TOKEN must be set in .env}
     extra_hosts:
       - "host.docker.internal:host-gateway"
     ports:
@@ -130,6 +134,27 @@ services:
       - ALL
     mem_limit: 512m
     cpus: "1.0"
+
+  cyberlab-labmanager:
+    build:
+      context: ./labmanager
+      dockerfile: Dockerfile
+    container_name: cyberlab-labmanager
+    restart: unless-stopped
+    environment:
+      LABMANAGER_TOKEN: ${LABMANAGER_TOKEN:?LABMANAGER_TOKEN must be set in .env}
+      KALI_NETWORK_NAME: cyberlab-kali-net
+    volumes:
+      # The only service in the stack with access to the Docker socket, and
+      # only for lab lifecycle management (start/stop/reset/delete labs).
+      # Isolating this to one narrow-purpose service — rather than granting
+      # it to cyberlab-api — keeps the blast radius of that access contained.
+      # See docs/security.md for the reasoning and the accepted trade-off.
+      - /var/run/docker.sock:/var/run/docker.sock
+    networks:
+      - cyberlab-backend
+    mem_limit: 256m
+    cpus: "0.5"
 
   cyberlab-frontend:
     build:

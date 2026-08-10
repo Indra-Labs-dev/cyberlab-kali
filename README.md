@@ -31,7 +31,7 @@ docker compose down
 
 ## État du projet
 
-Développement par phases (voir [CHANGELOG.md](CHANGELOG.md)). Phase actuelle : **Phase 6 — Terminal intégré**.
+Développement par phases (voir [CHANGELOG.md](CHANGELOG.md)). Phase actuelle : **Phase 7 — Lab Manager**.
 
 ## Documentation
 
@@ -40,4 +40,5 @@ Développement par phases (voir [CHANGELOG.md](CHANGELOG.md)). Phase actuelle : 
 - [Docker](docs/docker.md)
 - [API](docs/api.md)
 - [Outils](docs/tools.md)
+- [Labs](docs/labs.md)
 - [Sécurité](docs/security.md)

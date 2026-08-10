@@ -32,19 +32,29 @@ Contrairement au Job Engine (arguments strictement validés, allowlist d'outils)
 - **Aucune authentification utilisateur pour l'instant** : n'importe qui atteignant `POST /api/ws/terminal` obtient un shell dans le conteneur Kali. C'est acceptable uniquement parce que CyberLab n'écoute que sur `127.0.0.1` par défaut (section 21). **Avant toute exposition au-delà de localhost, une authentification applicative sur cet endpoint est un prérequis bloquant**, pas une amélioration optionnelle (voir Phase 10).
 - **Cycle de vie du processus** : le PTY et le processus `bash` sont fermés/tués (`proc.terminate()` + `proc.wait()`) à la déconnexion — un bug de zombie process (le shell restait `<defunct>` faute de `wait()`) a été trouvé et corrigé pendant les tests de la Phase 6.
 
+## Lab Manager — le seul service avec accès à `docker.sock`
+
+Le Lab Manager (démarrer/arrêter/reset/supprimer des labs Docker vulnérables-par-design comme DVWA) a besoin de contrôler Docker. C'est en tension directe avec la règle « ne jamais donner `docker.sock` au backend ». Résolution retenue :
+
+- **`docker.sock` n'est monté que dans `cyberlab-labmanager`** (`labmanager/`), un service dédié, minuscule, sans autre rôle. `cyberlab-api` et `cyberlab-worker` n'y ont jamais accès — ils passent par `POST /api/labs/...` sur l'API, qui relaie (`backend/app/api/routes/labs.py`) vers le Lab Manager via HTTP interne authentifié (`LABMANAGER_TOKEN`, même modèle que l'agent Kali).
+- **Ce compromis reste un accès quasi-root sur l'hôte** : quiconque compromet `cyberlab-labmanager` peut piloter n'importe quel conteneur du démon Docker hôte, pas seulement les labs. Ajouter `cap_drop`/`no-new-privileges` sur ce service serait un théâtre de sécurité — ces restrictions ne changent rien tant que `docker.sock` est monté. La vraie mitigation est l'isolation fonctionnelle (un seul service étroit, sans exécution de code arbitraire, allowlist stricte des définitions de labs) plutôt que le durcissement du conteneur lui-même.
+- **Chaque lab est isolé** : réseau Docker dédié (`cyberlab-lab-<id>`), en plus d'être connecté à `cyberlab-kali-net` pour que le conteneur Kali puisse le scanner par nom. Port hôte publié uniquement sur `127.0.0.1`, port aléatoire (jamais de port fixe qui pourrait entrer en collision ou être deviné).
+- **Découverte fiable via labels Docker** : le Lab Manager ne maintient pas d'état dupliqué en base — il interroge Docker directement (`docker ps --filter label=cyberlab.lab=true`), donc pas de désynchronisation possible entre l'état réel des conteneurs et ce que l'UI affiche.
+- **Bug trouvé et corrigé pendant les tests de la Phase 7** : les appels du SDK Docker sont synchrones ; les exécuter directement dans un handler FastAPI `async def` bloque tout l'event loop pendant un pull d'image (potentiellement plusieurs minutes) — y compris `/health`, rendant le service entièrement indisponible entre-temps. Corrigé en déportant chaque appel Docker SDK dans un thread (`loop.run_in_executor`).
+
 ## Réseau
 
 - Tous les ports hôte sont bindés sur `127.0.0.1` uniquement.
-- Réseau `cyberlab-kali-net` séparé de `cyberlab-backend` : seuls `cyberlab-api` et `cyberlab-worker` peuvent atteindre `cyberlab-kali`.
+- Réseau `cyberlab-kali-net` séparé de `cyberlab-backend` : seuls `cyberlab-api`, `cyberlab-worker`, et les conteneurs de labs (connectés dynamiquement par le Lab Manager) peuvent atteindre `cyberlab-kali`.
+- `cyberlab-labmanager` n'est que sur `cyberlab-backend` — pas de raison qu'il touche `cyberlab-kali-net`.
 
 ## Secrets
 
 - Aucun secret en dur dans le code ou committé dans Git (`.env` est dans `.gitignore`).
-- `API_SECRET_KEY`, `POSTGRES_PASSWORD`, `KALI_AGENT_TOKEN` générés aléatoirement (`openssl rand -hex`) dans l'environnement de développement local.
+- `API_SECRET_KEY`, `POSTGRES_PASSWORD`, `KALI_AGENT_TOKEN`, `LABMANAGER_TOKEN` générés aléatoirement (`openssl rand -hex`) dans l'environnement de développement local.
 
 ## À faire (Phase 10 — durcissement)
 
-- Authentification utilisateur sur l'API si exposée au-delà de `localhost` — **bloquant en particulier pour `/api/ws/terminal`** (shell complet, sans allowlist), voir ci-dessus.
+- Authentification utilisateur sur l'API si exposée au-delà de `localhost` — **bloquant en particulier pour `/api/ws/terminal`** (shell complet, sans allowlist) et pour `/api/labs` (contrôle indirect de `docker.sock`), voir ci-dessus.
 - Audit des dépendances (`pip-audit`, `npm audit`).
 - Revue CORS/WebSocket.
-- Revue des permissions du conteneur Lab Manager (Phase 7).

@@ -36,6 +36,15 @@ Documentation interactive générée automatiquement par FastAPI : `http://local
 
 Annuler un job `RUNNING` envoie une demande d'arrêt best-effort au worker (`rq.command.send_stop_job_command`), mais le processus distant (nmap/whatweb/nikto) tournant dans le conteneur Kali continue jusqu'à son propre timeout — l'agent Kali n'expose pas encore de mécanisme pour tuer un scan en cours par identifiant. Le job est marqué `CANCELLED` immédiatement côté API/DB dans tous les cas ; une correction tardive de résultat ne peut jamais écraser cet état (voir `backend/app/jobs/tasks.py::execute_job`).
 
+## Labs (Lab Manager — voir [labs.md](labs.md))
+
+- `GET /api/labs/definitions` — catalogue des labs disponibles.
+- `GET /api/labs` — labs actifs (état lu directement depuis Docker).
+- `POST /api/labs?definition=dvwa` — crée et démarre un lab (`201`).
+- `GET /api/labs/{id}` — détail d'un lab (`404` si inconnu).
+- `POST /api/labs/{id}/start` / `/stop` / `/reset` — cycle de vie.
+- `DELETE /api/labs/{id}` — supprime le conteneur et son réseau dédié (`204`).
+
 ## Temps réel
 
 - `WS /api/ws/jobs/{job_id}` — un message JSON par transition de statut (`{"id", "status", ...}`), diffusé via Redis pub/sub par le worker au fur et à mesure de l'exécution.

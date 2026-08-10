@@ -1,0 +1,8 @@
+name: dvwa
+display_name: "Damn Vulnerable Web Application"
+description: >
+  Intentionally vulnerable PHP/MySQL web application used for learning common
+  web vulnerabilities (SQLi, XSS, CSRF, ...). Not connected to the internet;
+  isolated on its own Docker network plus the Kali scan network.
+image: "vulnerables/web-dvwa:latest"
+internal_port: 80

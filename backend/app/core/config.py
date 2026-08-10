@@ -27,6 +27,9 @@ class Settings(BaseSettings):
     kali_agent_url: str = "http://cyberlab-kali:9000"
     kali_agent_token: str = "change-me-in-production"
 
+    labmanager_url: str = "http://cyberlab-labmanager:9100"
+    labmanager_token: str = "change-me-in-production"
+
     @property
     def cors_origins(self) -> list[str]:
         return [origin.strip() for origin in self.cors_origins_raw.split(",") if origin.strip()]

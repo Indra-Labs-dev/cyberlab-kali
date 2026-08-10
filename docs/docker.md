@@ -27,8 +27,21 @@ Tous les ports sont bindés sur `127.0.0.1` uniquement (pas d'exposition réseau
 
 ## Réseaux
 
-- `cyberlab-backend` : frontend, api, postgres, redis, worker.
-- `cyberlab-kali-net` : api, worker, kali (Phase 2) — isolé du reste pour limiter la surface d'exposition du conteneur d'outils.
+- `cyberlab-backend` : frontend, api, postgres, redis, worker, labmanager.
+- `cyberlab-kali-net` : api, worker, kali, + les conteneurs de labs (connectés dynamiquement) — isolé du reste pour limiter la surface d'exposition du conteneur d'outils.
+- Les noms de ces deux réseaux sont épinglés (`name:` explicite dans `docker-compose.yml`) plutôt que laissés au préfixage automatique de Compose, car le Lab Manager doit pouvoir s'y connecter dynamiquement par un nom stable et connu à l'avance (`KALI_NETWORK_NAME`).
+- Chaque lab créé par le Lab Manager obtient en plus son propre réseau dédié (`cyberlab-lab-<id>`), supprimé automatiquement quand le lab est supprimé.
+
+## Services
+
+| Service | Rôle |
+|---|---|
+| `cyberlab-frontend` | Nuxt UI |
+| `cyberlab-api` | FastAPI (REST + WebSocket) |
+| `cyberlab-worker` | Worker RQ (exécution des jobs) |
+| `cyberlab-kali` | Outils de sécurité (nmap/whatweb/nikto) + terminal PTY |
+| `cyberlab-labmanager` | Cycle de vie des labs Docker — seul service avec `docker.sock` |
+| `cyberlab-postgres` / `cyberlab-redis` | Persistance / file de jobs |
 
 ## Ollama
 
