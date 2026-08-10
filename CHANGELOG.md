@@ -1,5 +1,44 @@
 # Changelog
 
+## Unreleased — Phase 9 — Findings + Reports
+
+- Finding model (`backend/app/models/finding.py`): job_id, target, source_tool,
+  title, description, severity (INFO..CRITICAL), confidence, evidence (raw
+  tool data), recommendation. Extracted **automatically** on job SUCCESS
+  (`backend/app/findings/extractor.py`, wired into `execute_job()`) — one
+  extractor per tool (nmap: open ports only; whatweb: detected tech;
+  nikto: per finding line, MEDIUM only on vuln keywords), deliberately
+  conservative on severity (never HIGH/CRITICAL from a heuristic alone).
+  `GET /api/findings`, `GET /api/findings/{id}`.
+- Report model (`backend/app/models/report.py`): persisted, regenerable
+  without recomputation. `backend/app/reports/builder.py` aggregates
+  jobs + findings + AI analysis; renderers for json/markdown/html (Jinja2)/
+  pdf (reportlab, pure Python — no Cairo/Pango system deps). `POST /api/reports`,
+  `GET /api/reports`, `GET /api/reports/{id}/download`.
+- Frontend: `/findings` page (severity filter, links back to the source
+  scan), `/reports` page (select completed scans, pick a format, generate,
+  download past reports).
+- Real bug found via end-to-end testing against the DVWA lab (not just the
+  Kali container scanning itself): nmap's default host-discovery ping
+  (ICMP/ARP) needs `CAP_NET_RAW` independently of `-sT`, so any scan of a
+  real external target failed with "Couldn't open a raw socket or eth
+  handle". Fixed by adding `-Pn` to nmap's fixed_args (skip host discovery,
+  treat target as up) — documented in `docs/security.md`.
+- Real, more significant bug found and fixed: `server_default="now()"` (a
+  bare Python string) on Job/Finding/Report was compiled by SQLAlchemy as
+  the literal SQL string `'now()'`; Postgres evaluates that cast once, at
+  table-creation time, then reuses the same frozen timestamp as the default
+  for every row — so every row in a table shared the same `created_at`
+  until the table was recreated. Fixed with `sa.text("now()")` (an unquoted
+  function call, re-evaluated per row) plus a migration
+  (`6ad0daaf9daa`) correcting the already-live columns. Documented in
+  `docs/findings-reports.md`.
+- Verified end-to-end: ran nmap + whatweb against the running DVWA lab,
+  confirmed findings were extracted automatically (1 + 14), generated
+  reports in all four formats through the actual browser UI, downloaded
+  and inspected each (PDF confirmed as a real 2-page PDF via `file`,
+  Markdown/JSON/HTML content spot-checked).
+
 ## Unreleased — Phase 8 — AI integration (Ollama)
 
 - `backend/app/ai/`: provider abstraction (`provider.py` interface, `ollama.py`

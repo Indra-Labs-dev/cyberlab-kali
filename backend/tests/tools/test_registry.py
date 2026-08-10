@@ -15,7 +15,7 @@ def test_get_unknown_tool_raises():
 
 def test_build_command_nmap_minimal():
     args = registry.build_command("nmap", {"target": "scanme.nmap.org"})
-    assert args == ["-oX", "-", "-sT", "scanme.nmap.org"]
+    assert args == ["-oX", "-", "-sT", "-Pn", "scanme.nmap.org"]
 
 
 def test_build_command_nmap_with_flags():
@@ -23,7 +23,7 @@ def test_build_command_nmap_with_flags():
         "nmap",
         {"target": "10.0.0.1", "ports": "80,443", "service_detection": True},
     )
-    assert args == ["-oX", "-", "-sT", "-p", "80,443", "-sV", "10.0.0.1"]
+    assert args == ["-oX", "-", "-sT", "-Pn", "-p", "80,443", "-sV", "10.0.0.1"]
 
 
 def test_build_command_missing_required_target():

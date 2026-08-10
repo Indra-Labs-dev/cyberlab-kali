@@ -2,7 +2,7 @@ import enum
 import uuid
 from datetime import datetime
 
-from sqlalchemy import JSON, DateTime, Enum, Integer, String, Text
+from sqlalchemy import JSON, DateTime, Enum, Integer, String, Text, text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -28,7 +28,7 @@ class Job(Base):
         Enum(JobStatus, name="job_status"), nullable=False, default=JobStatus.QUEUED
     )
 
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default="now()")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=text("now()"))
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 

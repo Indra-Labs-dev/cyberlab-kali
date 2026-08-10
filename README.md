@@ -31,7 +31,7 @@ docker compose down
 
 ## État du projet
 
-Développement par phases (voir [CHANGELOG.md](CHANGELOG.md)). Phase actuelle : **Phase 8 — IA locale (Ollama)**.
+Développement par phases (voir [CHANGELOG.md](CHANGELOG.md)). Phase actuelle : **Phase 9 — Findings + Reports**.
 
 ## Documentation
 
@@ -42,4 +42,5 @@ Développement par phases (voir [CHANGELOG.md](CHANGELOG.md)). Phase actuelle : 
 - [Outils](docs/tools.md)
 - [Labs](docs/labs.md)
 - [IA](docs/ai.md)
+- [Findings & Reports](docs/findings-reports.md)
 - [Sécurité](docs/security.md)

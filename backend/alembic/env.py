@@ -5,7 +5,7 @@ from sqlalchemy import engine_from_config, pool
 
 from app.core.config import get_settings
 from app.db.session import Base
-from app.models import Job  # noqa: F401  (registers tables on Base.metadata for autogenerate)
+from app import models  # noqa: F401  (registers all model tables on Base.metadata for autogenerate)
 
 config = context.config
 if config.config_file_name is not None:

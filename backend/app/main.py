@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api.routes import ai, health, jobs, labs, terminal, tools, ws
+from app.api.routes import ai, findings, health, jobs, labs, reports, terminal, tools, ws
 from app.core.config import get_settings
 
 settings = get_settings()
@@ -23,3 +23,5 @@ app.include_router(ws.router, prefix="/api")
 app.include_router(terminal.router, prefix="/api")
 app.include_router(labs.router, prefix="/api")
 app.include_router(ai.router, prefix="/api")
+app.include_router(findings.router, prefix="/api")
+app.include_router(reports.router, prefix="/api")

@@ -4,9 +4,13 @@ description: Network exploration and port/service scanning.
 command:
   executable: nmap
 # -oX - forces machine-readable XML on stdout so the parser never has to
-# guess at nmap's human-readable text format; -sT avoids CAP_NET_RAW, which
+# guess at nmap's human-readable text format. -sT avoids CAP_NET_RAW, which
 # the cyberlab-kali container intentionally does not have (see docs/security.md).
-fixed_args: ["-oX", "-", "-sT"]
+# -Pn is required for the same reason: nmap's default host-discovery ping
+# (ICMP/ARP) also needs a raw socket, even with -sT for the port scan itself;
+# without -Pn, scanning any target other than the Kali container itself fails
+# with "Couldn't open a raw socket or eth handle" (found via Phase 9 testing).
+fixed_args: ["-oX", "-", "-sT", "-Pn"]
 default_timeout: 60
 max_timeout: 240
 arguments:

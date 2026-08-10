@@ -15,9 +15,13 @@ cyberlab-api / cyberlab-worker --(HTTP interne, réseau cyberlab-kali-net)--> cy
 - **Timeout obligatoire** : plafonné à 300s côté agent, quel que soit ce que demande l'appelant.
 - **Isolation du conteneur** : `cap_drop: ALL`, `security_opt: no-new-privileges`, utilisateur non-root, pas d'accès à `docker.sock`, pas de `privileged: true`, limites mémoire/CPU.
 
-### Conséquence connue : pas de scan SYN par défaut
+### Conséquence connue : pas de scan SYN par défaut, `-Pn` obligatoire
 
-`cap_drop: ALL` retire `CAP_NET_RAW`, nécessaire aux scans nmap bas niveau (`-sS`, découverte ARP, etc.). Par défaut, les jobs nmap doivent utiliser des scans applicatifs (`-sT`, TCP connect) qui ne nécessitent pas de socket brut — validé en Phase 2. Si des scans SYN sont nécessaires plus tard, ajouter explicitement `cap_add: [NET_RAW, NET_ADMIN]` au service `cyberlab-kali` est un choix à documenter et justifier (Phase 10 - durcissement), pas un défaut.
+`cap_drop: ALL` retire `CAP_NET_RAW`, nécessaire aux scans nmap bas niveau (`-sS`, découverte ARP/ICMP, etc.). Par défaut, les jobs nmap utilisent `-sT` (TCP connect, pas de socket brut — validé en Phase 2) **et `-Pn`** (désactive la découverte d'hôte, qui utilise ICMP/ARP par défaut et nécessite donc aussi `CAP_NET_RAW`, indépendamment de `-sT`).
+
+Trouvé en Phase 9 en scannant un vrai lab (DVWA) plutôt que le conteneur Kali lui-même : sans `-Pn`, nmap échoue avec `Couldn't open a raw socket or eth handle` dès la phase de découverte, avant même le scan de ports — ce n'était pas visible plus tôt car les tests précédents ciblaient `cyberlab-kali` depuis lui-même, un cas limite proche du loopback où nmap ne déclenche pas la découverte réseau classique. `-Pn` traite systématiquement la cible comme active et va directement au scan de ports, ce qui est le comportement voulu ici (les cibles sont des conteneurs sur des réseaux Docker contrôlés, pas un scan Internet où "the host might not respond to ping" justifierait une vraie découverte).
+
+Si des scans SYN sont nécessaires plus tard, ajouter explicitement `cap_add: [NET_RAW, NET_ADMIN]` au service `cyberlab-kali` est un choix à documenter et justifier (Phase 10 - durcissement), pas un défaut.
 
 ## Terminal intégré — surface la plus privilégiée de l'application
 

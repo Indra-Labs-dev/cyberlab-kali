@@ -1,8 +1,10 @@
 from datetime import datetime, timezone
 
 from app.db.sync_session import get_sync_session
+from app.findings.extractor import extract_findings
 from app.jobs.kali_client import KaliAgentError, run_tool
 from app.jobs.pubsub import publish_job_update
+from app.models.finding import Finding
 from app.models.job import Job, JobStatus
 from app.tools import registry
 from app.tools.parsers import parse_output
@@ -68,6 +70,11 @@ def execute_job(job_id: str, tool_name: str, params: dict, timeout: int | None =
             job.result = parsed
             job.status = JobStatus.SUCCESS if raw.get("exit_code") == 0 else JobStatus.FAILED
             job.finished_at = _now()
+
+            if job.status == JobStatus.SUCCESS:
+                for finding_data in extract_findings(tool_name, job.target, parsed):
+                    session.add(Finding(job_id=job.id, **finding_data))
+
             session.commit()
             publish_job_update(
                 job_id,

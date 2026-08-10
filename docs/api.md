@@ -45,6 +45,20 @@ Annuler un job `RUNNING` envoie une demande d'arrêt best-effort au worker (`rq.
 - `POST /api/labs/{id}/start` / `/stop` / `/reset` — cycle de vie.
 - `DELETE /api/labs/{id}` — supprime le conteneur et son réseau dédié (`204`).
 
+## Findings (voir [findings-reports.md](findings-reports.md))
+
+- `GET /api/findings?severity=&job_id=&limit=` — liste les findings (plus récents d'abord).
+- `GET /api/findings/{id}` — détail d'un finding (`404` si inconnu).
+
+Les findings sont créés **automatiquement** à la fin de chaque job `SUCCESS` (`backend/app/jobs/tasks.py::execute_job`) — aucune action manuelle requise.
+
+## Reports (voir [findings-reports.md](findings-reports.md))
+
+- `POST /api/reports` — `{title, job_ids, format}` (`format`: `html`/`markdown`/`json`/`pdf`) → génère et persiste un rapport (`201`). `404` si aucun `job_id` valide.
+- `GET /api/reports` — liste les rapports générés (métadonnées seulement).
+- `GET /api/reports/{id}` — métadonnées d'un rapport.
+- `GET /api/reports/{id}/download` — télécharge le contenu avec le bon `Content-Type`/`Content-Disposition`.
+
 ## IA (voir [ai.md](ai.md))
 
 - `POST /api/ai/analyze/{job_id}` — analyse IA d'un job terminé, persistée sur `Job.ai_analysis`.
