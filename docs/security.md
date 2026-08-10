@@ -42,6 +42,10 @@ Le Lab Manager (démarrer/arrêter/reset/supprimer des labs Docker vulnérables-
 - **Découverte fiable via labels Docker** : le Lab Manager ne maintient pas d'état dupliqué en base — il interroge Docker directement (`docker ps --filter label=cyberlab.lab=true`), donc pas de désynchronisation possible entre l'état réel des conteneurs et ce que l'UI affiche.
 - **Bug trouvé et corrigé pendant les tests de la Phase 7** : les appels du SDK Docker sont synchrones ; les exécuter directement dans un handler FastAPI `async def` bloque tout l'event loop pendant un pull d'image (potentiellement plusieurs minutes) — y compris `/health`, rendant le service entièrement indisponible entre-temps. Corrigé en déportant chaque appel Docker SDK dans un thread (`loop.run_in_executor`).
 
+## IA — l'IA ne peut jamais exécuter d'action directement
+
+Le Mission Planner (`backend/app/ai/planner.py`) **propose** un plan ; il n'appelle jamais `POST /api/jobs` lui-même. C'est le frontend, sur action explicite de l'utilisateur (bouton « Run » par étape), qui déclenche l'exécution — via le même endpoint et donc la **même validation stricte du Tool Registry** que la page Tools (voir [ai.md](ai.md) pour des exemples réels d'options hallucinées par le modèle et rejetées par le registre avant tout appel à l'agent Kali). Un nom d'outil halluciné (qui n'existe pas dans le registre) est explicitement supprimé de l'étape (`step.tool = None`) plutôt que transmis tel quel.
+
 ## Réseau
 
 - Tous les ports hôte sont bindés sur `127.0.0.1` uniquement.

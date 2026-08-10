@@ -31,7 +31,7 @@ docker compose down
 
 ## État du projet
 
-Développement par phases (voir [CHANGELOG.md](CHANGELOG.md)). Phase actuelle : **Phase 7 — Lab Manager**.
+Développement par phases (voir [CHANGELOG.md](CHANGELOG.md)). Phase actuelle : **Phase 8 — IA locale (Ollama)**.
 
 ## Documentation
 
@@ -41,4 +41,5 @@ Développement par phases (voir [CHANGELOG.md](CHANGELOG.md)). Phase actuelle : 
 - [API](docs/api.md)
 - [Outils](docs/tools.md)
 - [Labs](docs/labs.md)
+- [IA](docs/ai.md)
 - [Sécurité](docs/security.md)

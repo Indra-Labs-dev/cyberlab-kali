@@ -45,6 +45,12 @@ Annuler un job `RUNNING` envoie une demande d'arrêt best-effort au worker (`rq.
 - `POST /api/labs/{id}/start` / `/stop` / `/reset` — cycle de vie.
 - `DELETE /api/labs/{id}` — supprime le conteneur et son réseau dédié (`204`).
 
+## IA (voir [ai.md](ai.md))
+
+- `POST /api/ai/analyze/{job_id}` — analyse IA d'un job terminé, persistée sur `Job.ai_analysis`.
+- `POST /api/ai/plan` — `{target, goal}` → plan proposé (jamais exécuté automatiquement).
+- `POST /api/ai/chat` — question/réponse libre avec l'assistant.
+
 ## Temps réel
 
 - `WS /api/ws/jobs/{job_id}` — un message JSON par transition de statut (`{"id", "status", ...}`), diffusé via Redis pub/sub par le worker au fur et à mesure de l'exécution.

@@ -29,3 +29,4 @@ class JobResponse(BaseModel):
     exit_code: int | None
     result: dict | None
     error: str | None
+    ai_analysis: dict | None

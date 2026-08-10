@@ -1,5 +1,41 @@
 # Changelog
 
+## Unreleased — Phase 8 — AI integration (Ollama)
+
+- `backend/app/ai/`: provider abstraction (`provider.py` interface, `ollama.py`
+  implementation) so the model/backend can be swapped later without touching
+  `analyst.py`/`planner.py`. Structured-output prompts (`prompts.py`) using
+  Ollama's `format: "json"` constraint, with tolerant JSON extraction
+  (`parsing.py`) for when a small local model wraps its answer in prose or
+  markdown fences anyway.
+- **AI Analyst** (`POST /api/ai/analyze/{job_id}`): analyzes a completed
+  job's tool/target/parsed result/stdout, returns/persists a structured
+  `{risk, summary, findings, recommendations, next_steps}` on `Job.ai_analysis`
+  (new column, migration `566dc8667e8a`). Falls back to `risk: INFO` with the
+  raw response preserved if the model's output isn't parseable, rather than
+  erroring.
+- **AI Mission Planner** (`POST /api/ai/plan`): given `{target, goal}`,
+  grounds the model in the real Tool Registry (only tools that actually
+  exist are ever proposed; a hallucinated tool name is stripped rather than
+  trusted) and returns a proposed step-by-step plan. It never executes
+  anything itself — the frontend only runs a step when the user explicitly
+  clicks "Run" on it, through the same `POST /api/jobs` path (and therefore
+  the same strict registry validation) as the Tools page.
+- **AI Assistant chat** (`POST /api/ai/chat`): free-form Q&A, no execution
+  capability.
+- Frontend: `/ai` page (chat + Mission Planner with per-step "Run"), and an
+  "Analyze with AI" panel on the scan detail page.
+- 11 new tests (`backend/tests/ai/`): JSON extraction edge cases, analyst
+  fallback behavior, planner tool-hallucination stripping.
+- Real-world finding from end-to-end testing with the local model
+  (`qwen2.5-coder:3b`): it frequently proposes slightly malformed tool
+  options (e.g. a full nmap flag string instead of a port list, an
+  aggression level outside the allowed choices) — in every case the Tool
+  Registry's validation rejected the request with a clear error before any
+  call reached the Kali agent, confirmed live via the actual browser UI.
+  Documented in `docs/ai.md` and `docs/security.md` as the intended
+  defense-in-depth behavior, not a bug.
+
 ## Unreleased — Phase 7 — Lab Manager
 
 - New `cyberlab-labmanager` service (`labmanager/`): the only service in the
