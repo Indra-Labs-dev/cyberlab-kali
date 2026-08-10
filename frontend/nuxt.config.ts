@@ -3,6 +3,12 @@ export default defineNuxtConfig({
   devtools: { enabled: true },
   modules: ["@nuxtjs/tailwindcss"],
   css: ["~/assets/css/main.css"],
+  app: {
+    head: {
+      title: "CyberLab",
+      link: [{ rel: "icon", type: "image/png", href: "/logo.png" }],
+    },
+  },
   runtimeConfig: {
     public: {
       apiBase: process.env.NUXT_PUBLIC_API_BASE || "http://localhost:8300",

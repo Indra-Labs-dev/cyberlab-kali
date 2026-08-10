@@ -18,9 +18,10 @@ const route = useRoute();
 <template>
   <div class="flex min-h-screen bg-slate-950 text-slate-100">
     <aside class="flex w-56 shrink-0 flex-col border-r border-slate-800 bg-slate-900/40">
-      <div class="flex items-center gap-2 border-b border-slate-800 px-5 py-4">
-        <span class="h-2 w-2 rounded-full bg-emerald-500"></span>
-        <span class="font-semibold tracking-tight text-emerald-400">CyberLab</span>
+      <div class="border-b border-slate-800 px-4 py-3">
+        <NuxtLink to="/">
+          <img src="/logo.png" alt="CyberLab" class="mx-auto h-auto w-full max-w-[180px]" />
+        </NuxtLink>
       </div>
       <nav class="flex-1 space-y-0.5 px-2 py-3">
         <NuxtLink
