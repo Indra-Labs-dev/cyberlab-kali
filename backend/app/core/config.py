@@ -41,6 +41,12 @@ class Settings(BaseSettings):
     # not hammer Postgres with an idle stack.
     scheduler_poll_interval_seconds: int = 15
 
+    # Phase 15 -- how often the worker's background thread (app/intel/sync.py)
+    # refreshes EPSS/CISA KEV/NVD data. Daily by default (EPSS/KEV are
+    # themselves published on a daily cadence); `POST /api/intelligence/sync`
+    # triggers an immediate out-of-band run for testing/on-demand use.
+    intel_sync_interval_seconds: int = 86400
+
     @property
     def cors_origins(self) -> list[str]:
         return [origin.strip() for origin in self.cors_origins_raw.split(",") if origin.strip()]

@@ -86,6 +86,20 @@ interface Finding {
   title: string;
   severity: string;
   source_tool: string;
+  risk_score: number | null;
+  risk_priority: "INFORMATIONAL" | "LOW" | "MEDIUM" | "HIGH" | "CRITICAL" | null;
+}
+
+interface RiskSummary {
+  total_findings: number;
+  critical_findings: number;
+  high_findings: number;
+  medium_findings: number;
+  low_findings: number;
+  informational_findings: number;
+  kev_findings: number;
+  highest_risk_score: number | null;
+  unscored_findings: number;
 }
 
 const CRITICALITIES = ["LOW", "MEDIUM", "HIGH", "CRITICAL"] as const;
@@ -138,6 +152,10 @@ const changesError = ref("");
 const changeTypeFilter = ref("");
 const changeSeverityFilter = ref("");
 
+const riskSummary = ref<RiskSummary | null>(null);
+const riskSummaryLoading = ref(true);
+const riskSummaryError = ref("");
+
 const authColor: Record<string, string> = {
   LAB: "bg-emerald-500/15 text-emerald-400",
   AUTHORIZED: "bg-emerald-500/15 text-emerald-400",
@@ -152,6 +170,13 @@ const criticalityColor: Record<string, string> = {
 };
 const severityColor: Record<string, string> = {
   INFO: "bg-slate-700/50 text-slate-300",
+  LOW: "bg-emerald-500/15 text-emerald-400",
+  MEDIUM: "bg-amber-500/15 text-amber-400",
+  HIGH: "bg-orange-500/15 text-orange-400",
+  CRITICAL: "bg-red-500/15 text-red-400",
+};
+const priorityColor: Record<string, string> = {
+  INFORMATIONAL: "bg-slate-700/50 text-slate-300",
   LOW: "bg-emerald-500/15 text-emerald-400",
   MEDIUM: "bg-amber-500/15 text-amber-400",
   HIGH: "bg-orange-500/15 text-orange-400",
@@ -270,6 +295,18 @@ async function loadChanges() {
 }
 
 watch([changeTypeFilter, changeSeverityFilter], loadChanges);
+
+async function loadRiskSummary() {
+  riskSummaryLoading.value = true;
+  riskSummaryError.value = "";
+  try {
+    riskSummary.value = await apiFetch<RiskSummary>(`/api/assets/${assetId}/risk-summary`);
+  } catch (err: any) {
+    riskSummaryError.value = err?.data?.detail || "Failed to load risk overview";
+  } finally {
+    riskSummaryLoading.value = false;
+  }
+}
 
 async function createSchedule() {
   if (!newSchedule.tool) return;
@@ -416,6 +453,7 @@ onMounted(() => {
   loadAll();
   loadSchedules();
   loadChanges();
+  loadRiskSummary();
 });
 </script>
 
@@ -783,6 +821,36 @@ onMounted(() => {
       </div>
 
       <div class="rounded-lg border border-slate-800 bg-slate-900/40 p-4">
+        <h2 class="mb-3 text-sm font-semibold text-slate-300">Risk Overview</h2>
+        <p v-if="riskSummaryLoading" class="text-sm text-slate-600">Loading…</p>
+        <p v-else-if="riskSummaryError" class="text-sm text-red-400">{{ riskSummaryError }}</p>
+        <p v-else-if="riskSummary && riskSummary.total_findings === 0" class="text-sm text-slate-600">
+          No findings yet — risk is computed automatically once scans produce findings.
+        </p>
+        <div v-else-if="riskSummary" class="grid grid-cols-2 gap-4 sm:grid-cols-4">
+          <div>
+            <p class="text-2xl font-semibold text-red-400">{{ riskSummary.critical_findings }}</p>
+            <p class="text-xs text-slate-500">Critical findings</p>
+          </div>
+          <div>
+            <p class="text-2xl font-semibold text-orange-400">{{ riskSummary.high_findings }}</p>
+            <p class="text-xs text-slate-500">High findings</p>
+          </div>
+          <div>
+            <p class="text-2xl font-semibold text-red-400">{{ riskSummary.kev_findings }}</p>
+            <p class="text-xs text-slate-500">KEV findings</p>
+          </div>
+          <div>
+            <p class="text-2xl font-semibold text-slate-200">{{ riskSummary.highest_risk_score ?? "—" }}</p>
+            <p class="text-xs text-slate-500">Highest risk score</p>
+          </div>
+        </div>
+        <p v-if="riskSummary && riskSummary.unscored_findings > 0" class="mt-2 text-xs text-slate-600">
+          {{ riskSummary.unscored_findings }} finding(s) not yet scored.
+        </p>
+      </div>
+
+      <div class="rounded-lg border border-slate-800 bg-slate-900/40 p-4">
         <h2 class="mb-2 text-sm font-semibold text-slate-300">Scan history</h2>
         <p v-if="jobs.length === 0" class="text-sm text-slate-600">No scans against this asset yet.</p>
         <div v-else class="space-y-2">
@@ -805,10 +873,17 @@ onMounted(() => {
           <NuxtLink
             v-for="f in findings"
             :key="f.id"
-            :to="`/scans/${f.job_id}`"
+            :to="`/findings/${f.id}`"
             class="flex items-center gap-2 rounded-md border border-slate-800 bg-slate-950/50 p-2.5 hover:bg-slate-900"
           >
             <span class="rounded px-1.5 py-0.5 text-xs" :class="severityColor[f.severity]">{{ f.severity }}</span>
+            <span
+              v-if="f.risk_priority"
+              class="rounded px-1.5 py-0.5 text-xs"
+              :class="priorityColor[f.risk_priority]"
+            >
+              Risk {{ f.risk_score }}
+            </span>
             <span class="text-sm text-slate-200">{{ f.title }}</span>
           </NuxtLink>
         </div>

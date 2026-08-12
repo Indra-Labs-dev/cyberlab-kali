@@ -15,7 +15,7 @@ Nuxt (frontend, :3300) --REST/WS--> FastAPI (api, :8300) --+--> PostgreSQL (:554
 |---|---|---|---|
 | `cyberlab-frontend` | Nuxt 4 UI | cyberlab-backend | 3300 |
 | `cyberlab-api` | FastAPI (REST + WebSocket) | cyberlab-backend, cyberlab-kali-net | 8300 |
-| `cyberlab-worker` | Worker RQ (exécution des jobs d'outils) + ticker Continuous Recon (thread, Phase 14) | cyberlab-backend, cyberlab-kali-net | — |
+| `cyberlab-worker` | Worker RQ (exécution des jobs d'outils) + ticker Continuous Recon (Phase 14) + thread de sync Risk Intelligence (Phase 15) | cyberlab-backend, cyberlab-kali-net | — |
 | `cyberlab-postgres` | Persistance | cyberlab-backend | 55432 |
 | `cyberlab-redis` | File de jobs / pub-sub | cyberlab-backend | 63790 |
 | `cyberlab-kali` | Outils de sécurité (31, voir [tools.md](tools.md)), isolé, `cap_add: [NET_RAW]` narrow depuis la Phase 12 | cyberlab-kali-net | — |
@@ -59,6 +59,25 @@ Asset ──< ScheduledJob (Postgres, réutilise le Job Engine — pas de nouvea
 - **Ticker** (`app/scheduling/ticker.py`) : thread démon dans le process `cyberlab-worker` existant (pas un service Docker séparé), poll toutes les `scheduler_poll_interval_seconds` (15s par défaut). Réutilise `app/jobs/service.py::prepare_job()` (extrait de `POST /api/jobs`) et `is_executable()` — un `ScheduledJob` ne peut jamais créer de Job en dehors du Policy Engine existant.
 - **`AssetChangeEvent`** (`backend/app/models/asset_change_event.py`) : sortie du Diff Engine (`app/diff/`), qui compare les résultats normalisés de deux Jobs successifs compatibles (même Asset/tool/profile/params) pour nmap/whatweb/sslscan/gobuster. 9 types de changement, sévérité réutilisant l'enum `Finding.Severity` existant. `ON DELETE CASCADE` avec `Asset` (l'historique de changements n'a pas de sens sans l'asset).
 - **Suppression d'Asset/Target** : `disable_schedules_for_asset()` (`app/scheduling/service.py`) désactive proprement (`DISABLED`) tout `ScheduledJob` associé, dans la même transaction que la suppression — jamais un schedule orphelin pointant sur un asset disparu.
+
+## Risk Intelligence & Risk Score (Phase 15)
+
+```
+Finding (cve_ids extraits par app/tools/parsers/nuclei.py)
+   │
+   ├── vulnerability_intel (CVSS + EPSS, uniquement les CVE rencontrés)
+   ├── cisa_kev_entries (catalogue CISA KEV complet, ~1 700 entrées, refresh quotidien)
+   └── Asset.criticality + Finding.confidence (déjà en base)
+              │
+    app/risk/calculator.py (pur, déterministe, sans I/O)
+              │
+    Finding.risk_score / risk_priority (cache matérialisé, recalculé sur déclencheur)
+```
+
+- **`app/intel/`** (`epss.py`/`cisa_kev.py`/`nvd.py`/`sync.py`) : clients HTTP vers FIRST.org EPSS, CISA KEV, NVD CVE API 2.0 — schémas vérifiés en conditions réelles (voir [phase-15-risk-score.md](phase-15-risk-score.md)). Ingestion scopée aux CVE réellement rencontrés (EPSS/NVD) ou à un catalogue borné et justifié (CISA KEV, ~1,5 Mo, pas d'API de requête par CVE). Thread de fond dans `cyberlab-worker` (`start_intel_sync_thread`), **distinct** du ticker Continuous Recon — pattern réutilisé (thread + état Postgres), pas le modèle `ScheduledJob` (spécifique à l'exécution d'outils Kali).
+- **`app/risk/calculator.py`** : moyenne pondérée normalisée de 3 signaux disponibles (CVSS-ou-repli-sévérité 0.40, EPSS 0.35, KEV 0.25 — un signal manquant est exclu, jamais remplacé par une valeur inventée), puis multiplicateurs contextuels (criticité Asset ×0.85–1.30, confidence Finding ×0.60–1.00). Formule complète et justification mathématique dans [phase-15-risk-score.md](phase-15-risk-score.md).
+- **`Finding`** gagne `cve_ids`/`cvss_score`/`epss_score`/`kev`/`risk_score`/`risk_priority`/`risk_calculated_at` — cache matérialisé (jamais la source de vérité), recalculé à l'extraction, après sync d'intelligence, et après changement de `Asset.criticality`.
+- Aucun appel réseau externe synchrone dans un chemin de lecture — `GET /api/findings/{id}/risk` recalcule en direct mais uniquement à partir de données déjà locales (pur CPU).
 
 ## Décisions architecturales
 

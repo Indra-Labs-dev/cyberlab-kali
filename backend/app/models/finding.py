@@ -2,7 +2,7 @@ import enum
 import uuid
 from datetime import datetime
 
-from sqlalchemy import JSON, DateTime, Enum, ForeignKey, String, Text, text
+from sqlalchemy import JSON, Boolean, DateTime, Enum, Float, ForeignKey, Integer, String, Text, text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -23,6 +23,18 @@ class Confidence(str, enum.Enum):
     HIGH = "HIGH"
 
 
+class RiskPriority(str, enum.Enum):
+    """Phase 15 -- aggregate Risk Score priority band. Deliberately distinct
+    from Severity (a tool's raw rating): this is the output of
+    app/risk/calculator.py, not something a parser ever sets directly."""
+
+    INFORMATIONAL = "INFORMATIONAL"
+    LOW = "LOW"
+    MEDIUM = "MEDIUM"
+    HIGH = "HIGH"
+    CRITICAL = "CRITICAL"
+
+
 class Finding(Base):
     __tablename__ = "findings"
 
@@ -39,5 +51,24 @@ class Finding(Base):
     )
     evidence: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
     recommendation: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    # Phase 15 -- CVE identifiers extracted at parse time (currently only
+    # nuclei's `info.classification.cve-id`, see
+    # app/tools/parsers/nuclei.py::parse_nuclei). Empty list, never null --
+    # "no CVE" is the common case (an open port has no CVE), not an error.
+    cve_ids: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
+
+    # Materialized Risk Score cache -- always recomputable from cve_ids +
+    # app/models/vulnerability_intel.py + the linked Asset's criticality +
+    # `confidence` above via app/risk/calculator.py. Kept in sync by
+    # app/risk/service.py on finding creation, on relevant intelligence
+    # sync, and on Asset criticality change (see docs/phase-15-risk-score.md)
+    # -- never written directly by an API route. NULL until first computed.
+    cvss_score: Mapped[float | None] = mapped_column(Float, nullable=True)
+    epss_score: Mapped[float | None] = mapped_column(Float, nullable=True)
+    kev: Mapped[bool | None] = mapped_column(Boolean, nullable=True)  # NULL = unknown, not "false"
+    risk_score: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    risk_priority: Mapped[RiskPriority | None] = mapped_column(Enum(RiskPriority, name="risk_priority"), nullable=True)
+    risk_calculated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=text("now()"))

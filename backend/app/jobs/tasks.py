@@ -8,8 +8,10 @@ from app.jobs.kali_client import KaliAgentError, run_tool
 from app.jobs.pubsub import publish_job_update
 from app.models.finding import Finding
 from app.models.job import Job, JobStatus
+from app.risk.service import recalculate_finding_risk, seed_cvss_from_tool
 from app.tools import registry
 from app.tools.parsers import parse_output
+from app.tools.parsers.nuclei import cvss_hints
 
 
 def run_tool_job(tool: str, args: list[str], timeout: int = 60) -> dict:
@@ -73,9 +75,27 @@ def execute_job(job_id: str, tool_name: str, params: dict, timeout: int | None =
             job.status = JobStatus.SUCCESS if raw.get("exit_code") == 0 else JobStatus.FAILED
             job.finished_at = _now()
 
+            new_findings = []
             if job.status == JobStatus.SUCCESS:
                 for finding_data in extract_findings(tool_name, job.target, parsed):
-                    session.add(Finding(job_id=job.id, **finding_data))
+                    finding = Finding(job_id=job.id, **finding_data)
+                    session.add(finding)
+                    new_findings.append(finding)
+
+                if tool_name == "nuclei":
+                    # CVSS nuclei's own templates already carry (see
+                    # app/tools/parsers/nuclei.py::cvss_hints) is reused
+                    # immediately -- no need to wait for the next NVD sync,
+                    # and sync_nvd_cvss() will skip any CVE seeded here.
+                    seed_cvss_from_tool(session, cvss_hints(parsed))
+
+                # Risk Score reflects whatever intelligence is available
+                # right now (often nothing yet for a brand new CVE -- that's
+                # the honest N/A state, not an error); recomputed again once
+                # EPSS/KEV/NVD data arrives (app/intel/sync.py) or the
+                # asset's criticality changes (PATCH /api/assets/{id}).
+                for finding in new_findings:
+                    recalculate_finding_risk(session, finding)
 
             if job.target_id is not None:
                 # The tool actually ran against this asset (whether it

@@ -1,5 +1,102 @@
 # Changelog
 
+## Unreleased — Phase 15 — Risk Intelligence & Risk Score
+
+- **CVE/CVSS extraction from nuclei** (`backend/app/tools/parsers/nuclei.py`):
+  captures `info.classification` (`cve-id`, `cvss-score`, `cvss-metrics`) —
+  previously not parsed at all. Real schema verified live against nuclei
+  v3.11.0 in `cyberlab-kali` before writing any code (`cve-id` is a
+  lowercased array, normalized to uppercase; CVSS version parsed from the
+  vector string prefix, e.g. `CVSS:3.1/...`). `Finding` gains `cve_ids`
+  (real extracted data) plus a materialized Risk Score cache:
+  `cvss_score`/`epss_score`/`kev`/`risk_score`/`risk_priority`/
+  `risk_calculated_at`.
+- **Local Vulnerability Intelligence** (`backend/app/models/vulnerability_intel.py`):
+  `vulnerability_intel` (CVSS+EPSS, scoped to CVEs CyberLab has actually
+  encountered — never a bulk NVD/EPSS dump), `cisa_kev_entries` (the full
+  CISA KEV catalog, ~1,700 entries, ~1.5MB — a justified complete download
+  since CISA publishes no per-CVE query API, unlike EPSS), `intel_sync_state`
+  (per-source sync health, distinguishing "confirmed not in KEV" from
+  "KEV never synced").
+- **Three real external clients** (`backend/app/intel/`): FIRST.org EPSS
+  (batched by CVE, 100 per request), CISA KEV (full catalog), NVD CVE API
+  2.0 (only for CVEs missing CVSS elsewhere, version-priority
+  V40>V31>V30>V2, rate-limited to ~5 req/30s). All three schemas verified
+  against the real live APIs during development before writing the
+  parsers. Untrusted-input handling throughout: malformed entries are
+  skipped individually rather than failing the whole batch, all typed
+  exceptions (`EPSSFetchError`/`CisaKevFetchError`/`NVDFetchError`) are
+  caught and recorded to `IntelSyncState`, never propagated to crash the
+  sync thread.
+- **Background sync, not a new service**: `app/intel/sync.py::
+  start_intel_sync_thread()` runs as a daemon thread inside the existing
+  `cyberlab-worker` process, deliberately **not** reusing the Phase 14
+  `ScheduledJob`/ticker model (that's specifically "run a Kali tool
+  against an Asset through the Policy Engine" — intelligence ingestion
+  isn't a scan, forcing it through that model would need a fake `asset_id`
+  and a meaningless authorization re-check). Daily by default; `POST
+  /api/intelligence/sync` triggers an immediate cycle via the existing RQ
+  queue (`202`, never blocks on network I/O).
+- **Risk Calculator** (`backend/app/risk/calculator.py`): pure, deterministic,
+  zero I/O, zero LLM. Normalizes CVSS-or-severity-fallback (weight 0.40),
+  EPSS (0.35), and KEV (0.25) onto [0,1] and combines them as a weighted
+  average of **only the signals actually available** — a missing EPSS or
+  unsynced KEV is excluded and the remaining weights renormalized, never
+  faked as 0 or 0.5. Asset criticality (×0.85–1.30) and Finding confidence
+  (×0.60–1.00) apply as multiplicative context modifiers rather than
+  competing terms in the average. Full formula and mathematical
+  justification in
+  [docs/phase-15-risk-score.md](docs/phase-15-risk-score.md). Verified:
+  KEV=true alone never forces a 100 score; LOW confidence structurally
+  caps the score even with every other signal maxed; the extreme case
+  (CVSS 10 + EPSS 1.0 + KEV + CRITICAL asset + HIGH confidence) stays
+  exactly at the 0–100 bound.
+- **Materialized, trigger-based recalculation** (`app/risk/service.py`):
+  computed at Finding extraction time, after a relevant EPSS/KEV/NVD sync,
+  and after `Asset.criticality` changes (`PATCH /api/assets/{id}`,
+  dispatched via `asyncio.to_thread` so it never blocks the event loop).
+  `GET /api/findings/{id}/risk` recomputes live (pure CPU, no network)
+  rather than trusting the cache blindly, guaranteeing full
+  reproducibility; list-level sorting/filtering uses the materialized
+  columns to stay fast at scale.
+- **New API**: `GET /api/findings` gained `priority`/`kev`/
+  `min_risk_score` filters and `sort=risk_score_desc|risk_score_asc`;
+  `GET /api/findings/{id}/risk` (full breakdown: inputs, per-component
+  weights/availability, human-readable explanation); `GET
+  /api/assets/{id}/risk-summary` (critical/high/medium/low/informational/
+  KEV finding counts, highest risk score); `POST /api/intelligence/sync` +
+  `GET /api/intelligence/status`.
+- **Frontend**: `/findings` gained a Top Risks panel (score/priority/CVE/
+  KEV/EPSS/CVSS at a glance, matching the spec's example format exactly),
+  priority/KEV/min-score filters, risk-score sorting. New `/findings/[id]`
+  detail page: Risk Analysis (score, CVSS/EPSS/KEV/asset criticality/
+  confidence breakdown) + "Why this score?" explanation. `/targets/[id]`
+  (Asset page) gained a Risk Overview panel (critical/high/KEV finding
+  counts, highest risk score).
+- **Real bug found and fixed during E2E verification** (Tool Registry
+  behavior from Phase 12, not this phase, but only surfaced here): nuclei's
+  default severity profile (`info,low,medium`) silently filters out a
+  `-tags`-scoped scan whose only matching template is `critical`,
+  producing `[FTL] Could not run nuclei: no templates provided for scan`
+  with no findings and no error surfaced anywhere obviously —
+  reproduced, documented, worked around by passing `severity: critical`
+  explicitly rather than patched silently.
+- **Full pipeline verified against the real Docker stack**: a real nuclei
+  template referencing CVE-2021-44228 (Log4Shell, chosen for its genuine
+  public EPSS/KEV data) was run against the real DVWA lab through the
+  actual Job Engine; `POST /api/intelligence/sync` triggered real HTTP
+  calls to `cisa.gov`/`api.first.org` (observed in `cyberlab-worker`
+  logs); resulting Finding scored `72/HIGH` with Asset criticality `LOW`,
+  then `100/CRITICAL` after `PATCH`-ing the asset to `CRITICAL` —
+  confirmed via API and the live browser UI (Top Risks, Finding detail,
+  Asset Risk Overview). 292 tests green (211 pre-existing + 81 new).
+- **`docs/api.md` fully rewritten**, not just appended to: corrected to
+  reflect the real state of all mounted routers (Assets, legacy Targets,
+  Continuous Recon, Risk/Intelligence), closing documentation debt left
+  open since Phase 13/14 rather than compounding it.
+- See [docs/phase-15-risk-score.md](docs/phase-15-risk-score.md) for the
+  exact formula, ingestion strategy, and full verification log.
+
 ## Unreleased — Phase 14 — Continuous Recon + Diff Engine
 
 - **`ScheduledJob`** (`backend/app/models/scheduled_job.py`): periodic

@@ -1,3 +1,4 @@
+import asyncio
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -6,9 +7,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.session import get_db
 from app.models.asset import Asset, AssetCriticality, AssetType, AuthorizationStatus
+from app.models.finding import Finding, RiskPriority
 from app.models.job import Job
+from app.risk.service import recalculate_findings_for_asset_sync
 from app.schemas.asset import AssetResponse, AssetUpdateRequest
 from app.schemas.job import JobResponse
+from app.schemas.risk import AssetRiskSummaryResponse
 from app.scheduling.service import disable_schedules_for_asset
 
 router = APIRouter(prefix="/assets", tags=["assets"])
@@ -55,6 +59,7 @@ async def update_asset(
         raise HTTPException(status_code=404, detail="asset not found")
 
     updates = request.model_dump(exclude_unset=True)
+    criticality_changed = "criticality" in updates and updates["criticality"] != asset.criticality
     for field, value in updates.items():
         setattr(asset, field, value)
 
@@ -63,6 +68,14 @@ async def update_asset(
 
     await db.commit()
     await db.refresh(asset)
+
+    if criticality_changed:
+        # Risk Score depends on Asset criticality (Phase 15) -- every
+        # Finding on this asset needs its materialized score recomputed.
+        # Runs in a thread (own sync session) so this admin action, however
+        # many findings it touches, never blocks the event loop.
+        await asyncio.to_thread(recalculate_findings_for_asset_sync, asset_id)
+
     return asset
 
 
@@ -87,3 +100,42 @@ async def list_asset_jobs(asset_id: uuid.UUID, db: AsyncSession = Depends(get_db
 
     result = await db.execute(select(Job).where(Job.target_id == asset_id).order_by(Job.created_at.desc()))
     return list(result.scalars().all())
+
+
+@router.get("/{asset_id}/risk-summary", response_model=AssetRiskSummaryResponse)
+async def get_asset_risk_summary(asset_id: uuid.UUID, db: AsyncSession = Depends(get_db)) -> AssetRiskSummaryResponse:
+    asset = await db.get(Asset, asset_id)
+    if asset is None:
+        raise HTTPException(status_code=404, detail="asset not found")
+
+    job_ids = (await db.execute(select(Job.id).where(Job.target_id == asset_id))).scalars().all()
+    findings = []
+    if job_ids:
+        findings = (await db.execute(select(Finding).where(Finding.job_id.in_(job_ids)))).scalars().all()
+
+    counts = {p: 0 for p in RiskPriority}
+    kev_findings = 0
+    unscored = 0
+    highest: int | None = None
+    for finding in findings:
+        if finding.risk_priority is not None:
+            counts[finding.risk_priority] += 1
+        else:
+            unscored += 1
+        if finding.kev:
+            kev_findings += 1
+        if finding.risk_score is not None:
+            highest = finding.risk_score if highest is None else max(highest, finding.risk_score)
+
+    return AssetRiskSummaryResponse(
+        asset_id=asset_id,
+        total_findings=len(findings),
+        critical_findings=counts[RiskPriority.CRITICAL],
+        high_findings=counts[RiskPriority.HIGH],
+        medium_findings=counts[RiskPriority.MEDIUM],
+        low_findings=counts[RiskPriority.LOW],
+        informational_findings=counts[RiskPriority.INFORMATIONAL],
+        kev_findings=kev_findings,
+        highest_risk_score=highest,
+        unscored_findings=unscored,
+    )

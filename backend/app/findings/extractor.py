@@ -9,7 +9,15 @@ RISKY_PLAINTEXT_SERVICES = {"ftp", "telnet", "rsh", "rlogin", "vnc"}
 _NIKTO_VULN_KEYWORDS = ("xss", "sql injection", "injection", "vulnerable", "osvdb", "disclosure", "exposed")
 
 
-def _finding(target: str, source_tool: str, title: str, description: str, severity: str, evidence: dict) -> dict:
+def _finding(
+    target: str,
+    source_tool: str,
+    title: str,
+    description: str,
+    severity: str,
+    evidence: dict,
+    cve_ids: list[str] | None = None,
+) -> dict:
     return {
         "target": target,
         "source_tool": source_tool,
@@ -17,6 +25,7 @@ def _finding(target: str, source_tool: str, title: str, description: str, severi
         "description": description,
         "severity": severity,
         "evidence": evidence,
+        "cve_ids": cve_ids or [],
     }
 
 
@@ -122,6 +131,7 @@ def extract_from_nuclei(target: str, parsed: dict) -> list[dict]:
                 description=item.get("description") or f"nuclei template {item.get('template_id')} matched on {item.get('matched_at') or target}.",
                 severity=severity,
                 evidence=item,
+                cve_ids=item.get("cve_ids"),
             )
         )
     return findings

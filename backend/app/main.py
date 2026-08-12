@@ -1,7 +1,22 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api.routes import ai, assets, findings, health, jobs, labs, projects, reports, schedules, targets, terminal, tools, ws
+from app.api.routes import (
+    ai,
+    assets,
+    findings,
+    health,
+    intelligence,
+    jobs,
+    labs,
+    projects,
+    reports,
+    schedules,
+    targets,
+    terminal,
+    tools,
+    ws,
+)
 from app.core.auth_middleware import BearerTokenAuthMiddleware
 from app.core.config import get_settings
 
@@ -33,3 +48,4 @@ app.include_router(projects.router, prefix="/api")
 app.include_router(targets.router, prefix="/api")
 app.include_router(assets.router, prefix="/api")
 app.include_router(schedules.router, prefix="/api")
+app.include_router(intelligence.router, prefix="/api")
