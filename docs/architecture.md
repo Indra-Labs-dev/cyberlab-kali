@@ -24,19 +24,20 @@ Nuxt (frontend, :3300) --REST/WS--> FastAPI (api, :8300) --+--> PostgreSQL (:554
 
 Ollama n'est **pas** conteneurisé : le backend réutilise l'instance Ollama déjà active sur l'hôte Kali (`host.docker.internal:11434`), pour ne pas dupliquer la VRAM/RAM (contrainte mémoire de la machine de développement).
 
-## Modèle de données — Projects / Targets / Jobs (Phase 11)
+## Modèle de données — Projects / Assets / Jobs (Phase 11, généralisé Phase 13)
 
 ```
-Project (1) ──< Target (N) ──< Job (N, via target_id)
-   │                              │
-   └──────────< Job (N, via project_id, dénormalisé pour filtrer sans jointure) 
+Project (1) ──< Asset (N) ──< Job (N, via target_id)
+   │                             │
+   └──────────< Job (N, via project_id, dénormalisé pour filtrer sans jointure)
 ```
 
-- **`Project`** : conteneur logique (id, name, description, status `ACTIVE`/`ARCHIVED`). Regroupe targets, jobs, findings, labs, conversations IA, reports.
-- **`Target`** : cible scannable (id, `project_id` obligatoire, name, hostname/ip_address/url, `target_type`, `authorization_status`, description, metadata). `authorization_status` (`UNKNOWN` par défaut, sinon `LAB`/`AUTHORIZED`/`LOCAL`) est la **frontière de sécurité réelle** qui détermine si des jobs peuvent être lancés dessus — voir [security.md](security.md).
-- **`Job.project_id` / `Job.target_id`** : optionnels, `ForeignKey(..., ondelete="SET NULL")` — supprimer un Project ou un Target ne détruit jamais l'historique des jobs déjà exécutés, il perd juste son rattachement. Un job peut toujours être créé avec une cible en texte libre (`target`) sans passer par le modèle Target, pour compatibilité avec le flux historique (Phases 3–9) — voir la nuance documentée dans l'audit d'autorisation de [security.md](security.md).
-- **Application de l'autorisation : un seul point d'entrée.** `POST /api/jobs` est l'unique endroit qui vérifie `is_executable(target)` avant de créer un job lié à un `target_id` (`backend/app/targets/authorization.py`) — ni le Mission Planner IA, ni le frontend, ni aucun autre appelant n'a de chemin de contournement.
-- Migration entièrement additive (`backend/alembic/versions/6495416ebbf2_...py`) : nouvelles tables `projects`/`targets`, nouvelles colonnes nullable sur `jobs` — aucune donnée existante modifiée ou supprimée.
+- **`Project`** : conteneur logique (id, name, description, status `ACTIVE`/`ARCHIVED`). Regroupe assets, jobs, findings, labs, conversations IA, reports.
+- **`Asset`** (`backend/app/models/asset.py`, table `assets`) : généralisation Phase 13 du `Target` de la Phase 11 — même table (renommée), mêmes lignes, même clé primaire. Champs : id, `project_id` obligatoire, name, hostname/ip_address/url, `type` (`HOST`/`IP`/`DOMAIN`/`SUBDOMAIN`/`URL`/`SERVICE`/`CONTAINER`/`LAB`/`LAB_RESOURCE`/`OTHER`), `criticality` (`LOW`/`MEDIUM`/`HIGH`/`CRITICAL`, saisie manuelle), `authorization_status`, `tags`, `technologies` (alimenté automatiquement par les résultats whatweb), `first_seen`/`last_seen` (dérivés des jobs réellement exécutés, jamais éditables), description, metadata. `authorization_status` (`UNKNOWN` par défaut, sinon `LAB`/`AUTHORIZED`/`LOCAL`) reste la **frontière de sécurité réelle** qui détermine si des jobs peuvent être lancés dessus — voir [security.md](security.md).
+- **`Target`/`TargetType`** (`backend/app/models/target.py`) : alias Python purs vers `Asset`/`AssetType` (`Target = Asset`), conservés pour que tout le code et toutes les APIs de la Phase 11 (`/api/targets`, `TargetResponse`) continuent de fonctionner sans modification. Voir [phase-13-asset-model.md](phase-13-asset-model.md) pour le détail de la migration.
+- **`Job.project_id` / `Job.target_id`** : optionnels, `ForeignKey(..., ondelete="SET NULL")` — supprimer un Project ou un Asset ne détruit jamais l'historique des jobs déjà exécutés, il perd juste son rattachement. Un job peut toujours être créé avec une cible en texte libre (`target`) sans passer par le modèle Asset, pour compatibilité avec le flux historique (Phases 3–9) — voir la nuance documentée dans l'audit d'autorisation de [security.md](security.md).
+- **Application de l'autorisation : un seul point d'entrée, inchangé depuis la Phase 11.** `POST /api/jobs` est l'unique endroit qui vérifie `is_executable(asset)` avant de créer un job lié à un `target_id` (`backend/app/targets/authorization.py`) — ni le Mission Planner IA, ni le frontend, ni aucun autre appelant n'a de chemin de contournement. La Phase 13 n'a touché ni cette fonction ni son point d'application.
+- Migration Phase 13 (`backend/alembic/versions/392e4638a4d8_...py`) : renomme `targets` → `assets` et `target_type` → `type` (Postgres met à jour la FK `jobs.target_id` automatiquement), ajoute `criticality`/`tags`/`technologies`/`first_seen`/`last_seen`, backfill `first_seen`/`last_seen` depuis l'historique des jobs existants. Aucune ligne supprimée, aucune donnée existante perdue.
 
 ## Décisions architecturales
 

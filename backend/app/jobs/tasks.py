@@ -1,5 +1,6 @@
 from datetime import datetime, timezone
 
+from app.assets.activity import record_asset_activity, technologies_from_whatweb
 from app.db.sync_session import get_sync_session
 from app.findings.extractor import extract_findings
 from app.jobs.kali_client import KaliAgentError, run_tool
@@ -74,6 +75,17 @@ def execute_job(job_id: str, tool_name: str, params: dict, timeout: int | None =
             if job.status == JobStatus.SUCCESS:
                 for finding_data in extract_findings(tool_name, job.target, parsed):
                     session.add(Finding(job_id=job.id, **finding_data))
+
+            if job.target_id is not None:
+                # The tool actually ran against this asset (whether it
+                # succeeded or failed) -- that's real observed activity,
+                # distinct from the asset merely being created/edited.
+                technologies = (
+                    technologies_from_whatweb(parsed)
+                    if tool_name == "whatweb" and job.status == JobStatus.SUCCESS
+                    else None
+                )
+                record_asset_activity(session, job.target_id, job.finished_at, technologies)
 
             session.commit()
             publish_job_update(

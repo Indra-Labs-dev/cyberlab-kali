@@ -1,5 +1,68 @@
 # Changelog
 
+## Unreleased — Phase 13 — Asset Model
+
+- **`Target` generalized into `Asset`** (`backend/app/models/asset.py`): same
+  table (renamed `targets` → `assets`), same primary keys, same rows —
+  `Target`/`TargetType` (`backend/app/models/target.py`) become plain Python
+  aliases (`Target = Asset`) rather than a duplicated parallel table, so
+  every Phase 11 import, route, and test kept working unmodified. New
+  fields: `type` (superset enum — adds `SUBDOMAIN`/`SERVICE`/`LAB_RESOURCE`
+  to the existing `HOST`/`IP`/`DOMAIN`/`URL`/`CONTAINER`/`LAB`/`OTHER`),
+  `criticality` (`LOW`/`MEDIUM`/`HIGH`/`CRITICAL`, manual, defaults
+  `MEDIUM`), `tags`, `technologies` (auto-populated from whatweb plugin
+  detections, never directly editable), `first_seen`/`last_seen` (derived
+  from real Job activity via the new `app/assets/activity.py`, `NULL` until
+  an asset is actually scanned — never backfilled from `created_at`).
+- **Migration** (`392e4638a4d8`): `ALTER TABLE targets RENAME TO assets`
+  (Postgres updates the `jobs.target_id` FK automatically), column/enum
+  renames (`target_type`→`type`, `target_metadata`→`asset_metadata`,
+  `target_type` enum → `asset_type` with new values added via an autocommit
+  block), new nullable/defaulted columns, and a backfill of
+  `first_seen`/`last_seen` from existing `jobs` history. Backup taken
+  (`pg_dump`) before applying against the real dev database; verified via
+  `psql` (`\d assets`, FK target, `enum_range`).
+- **New `/api/assets`** (`backend/app/api/routes/assets.py`) + `POST
+  /api/projects/{id}/assets`: list (filters `project_id`/`type`/
+  `criticality`/`authorization_status`/`search`), get, patch, delete,
+  `/jobs`. `AssetUpdateRequest` deliberately excludes
+  `first_seen`/`last_seen`/`technologies` — those are derived-only, a
+  `PATCH` attempting to set them is silently ignored (absent from the
+  schema), not a 422. `/api/targets` and `/api/projects/{id}/targets`
+  untouched — same rows, verified visible from both endpoints
+  interchangeably.
+- **`app/assets/activity.py`**: `record_asset_activity()` called from
+  `execute_job()` once a job linked to a `target_id` reaches a terminal
+  state (SUCCESS or FAILED — the scan genuinely ran either way), updating
+  `first_seen` (never regressed)/`last_seen` and merging in whatweb-detected
+  technologies.
+- **Frontend**: `/targets` and `/targets/[id]` migrated to `/api/assets`
+  (same underlying rows, richer response) — expanded type/criticality/auth
+  filters, criticality + tags on the create form, a detail-page criticality
+  selector, tag add/remove, and a read-only Technologies/Activity panel.
+  `/projects/{id}` (Targets tab) and the target pickers in `/ai`/`/tools`
+  deliberately left on `/api/targets` for this phase — same data, no new
+  fields shown there yet.
+- **Security**: `/api/assets*` added explicitly to
+  `test_every_api_route_is_guarded_when_auth_enabled` (verified, not just
+  assumed from the path-prefix guard). No new imports under `app/ai/` — the
+  static `test_ai_module_has_no_write_access_to_target_model` check passes
+  unmodified. Full audit in
+  [security.md](docs/security.md#phase-13--asset-model--audit-de-sécurité).
+- **Verified end-to-end against the real Docker stack**, not just unit
+  tests: created a project + `CONTAINER` asset via the authenticated API,
+  ran a real `nmap` job against `cyberlab-kali` (`first_seen`/`last_seen`
+  populated with the real job timestamp), started the real DVWA lab,
+  created a `LAB_RESOURCE` asset (new enum value) against it with
+  auto-inferred `LAB` authorization, ran `whatweb` twice
+  (`technologies` populated with `Apache`/`DVWA`/`PHP`/...,
+  `last_seen` advanced on the second run without regressing `first_seen`),
+  and drove the actual browser UI (criticality change, tag add) with
+  reload-confirmed persistence. 152 tests green (131 pre-existing +
+  21 new), zero modified pre-existing test assertions.
+- See [docs/phase-13-asset-model.md](docs/phase-13-asset-model.md) for the
+  full design rationale and verification log.
+
 ## Unreleased — Phase 12 — Tool Registry expansion (31 tools)
 
 - **Tool Registry grew from 3 tools to 31**, curated category by category

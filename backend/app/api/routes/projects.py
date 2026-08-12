@@ -6,10 +6,12 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.session import get_db
+from app.models.asset import Asset
 from app.models.finding import Finding
 from app.models.job import Job
 from app.models.project import Project, ProjectStatus
 from app.models.target import Target
+from app.schemas.asset import AssetCreateRequest, AssetResponse
 from app.schemas.project import ProjectCreateRequest, ProjectResponse, ProjectSummary, ProjectUpdateRequest
 from app.schemas.target import TargetCreateRequest, TargetResponse
 from app.targets.authorization import infer_default_authorization
@@ -137,3 +139,44 @@ async def create_project_target(
     await db.commit()
     await db.refresh(target)
     return target
+
+
+@router.get("/{project_id}/assets", response_model=list[AssetResponse])
+async def list_project_assets(project_id: uuid.UUID, db: AsyncSession = Depends(get_db)) -> list[Asset]:
+    project = await db.get(Project, project_id)
+    if project is None:
+        raise HTTPException(status_code=404, detail="project not found")
+
+    result = await db.execute(select(Asset).where(Asset.project_id == project_id).order_by(Asset.created_at.desc()))
+    return list(result.scalars().all())
+
+
+@router.post("/{project_id}/assets", response_model=AssetResponse, status_code=201)
+async def create_project_asset(
+    project_id: uuid.UUID, request: AssetCreateRequest, db: AsyncSession = Depends(get_db)
+) -> Asset:
+    project = await db.get(Project, project_id)
+    if project is None:
+        raise HTTPException(status_code=404, detail="project not found")
+
+    authorization_status = request.authorization_status or infer_default_authorization(
+        request.hostname, request.ip_address, request.url
+    )
+
+    asset = Asset(
+        project_id=project_id,
+        name=request.name,
+        hostname=request.hostname,
+        ip_address=request.ip_address,
+        url=request.url,
+        type=request.type,
+        criticality=request.criticality,
+        authorization_status=authorization_status,
+        tags=request.tags,
+        description=request.description,
+        asset_metadata=request.asset_metadata,
+    )
+    db.add(asset)
+    await db.commit()
+    await db.refresh(asset)
+    return asset

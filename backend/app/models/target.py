@@ -1,59 +1,14 @@
-import enum
-import uuid
-from datetime import datetime
+"""Backward-compatible aliases. Phase 13 (Asset Model) generalized `Target`
+into `Asset` (app/models/asset.py) -- same table, same rows, same primary
+keys. Every pre-Phase-13 import (`from app.models.target import Target,
+TargetType, AuthorizationStatus`) keeps resolving to the exact same class,
+so `/api/targets` and everything built on it needed zero changes.
 
-from sqlalchemy import JSON, DateTime, Enum, ForeignKey, String, Text, text
-from sqlalchemy.dialects.postgresql import UUID
-from sqlalchemy.orm import Mapped, mapped_column
+New code should import from app.models.asset directly.
+"""
 
-from app.db.session import Base
+from app.models.asset import Asset as Target
+from app.models.asset import AssetType as TargetType
+from app.models.asset import AuthorizationStatus
 
-
-class TargetType(str, enum.Enum):
-    HOST = "HOST"
-    IP = "IP"
-    DOMAIN = "DOMAIN"
-    URL = "URL"
-    CONTAINER = "CONTAINER"
-    LAB = "LAB"
-    OTHER = "OTHER"
-
-
-class AuthorizationStatus(str, enum.Enum):
-    LAB = "LAB"
-    AUTHORIZED = "AUTHORIZED"
-    LOCAL = "LOCAL"
-    UNKNOWN = "UNKNOWN"
-
-
-class Target(Base):
-    __tablename__ = "targets"
-
-    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    project_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("projects.id"), nullable=False)
-
-    name: Mapped[str] = mapped_column(String(256), nullable=False)
-    hostname: Mapped[str | None] = mapped_column(String(512), nullable=True)
-    ip_address: Mapped[str | None] = mapped_column(String(64), nullable=True)
-    url: Mapped[str | None] = mapped_column(String(1024), nullable=True)
-    target_type: Mapped[TargetType] = mapped_column(Enum(TargetType, name="target_type"), nullable=False)
-    authorization_status: Mapped[AuthorizationStatus] = mapped_column(
-        Enum(AuthorizationStatus, name="target_authorization_status"),
-        nullable=False,
-        default=AuthorizationStatus.UNKNOWN,
-    )
-    description: Mapped[str | None] = mapped_column(Text, nullable=True)
-    target_metadata: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
-
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=text("now()"))
-    updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=text("now()"), onupdate=text("now()")
-    )
-
-    @property
-    def address(self) -> str:
-        """The actual string passed to the Tool Registry as the scan target:
-        whichever of url/hostname/ip_address is set, in that preference order
-        (a URL is the most specific form for web-oriented tools).
-        """
-        return self.url or self.hostname or self.ip_address or self.name
+__all__ = ["Target", "TargetType", "AuthorizationStatus"]

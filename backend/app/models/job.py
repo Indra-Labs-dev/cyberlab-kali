@@ -39,7 +39,7 @@ class Job(Base):
         UUID(as_uuid=True), ForeignKey("projects.id", ondelete="SET NULL"), nullable=True
     )
     target_id: Mapped[uuid.UUID | None] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("targets.id", ondelete="SET NULL"), nullable=True
+        UUID(as_uuid=True), ForeignKey("assets.id", ondelete="SET NULL"), nullable=True
     )
     params: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
     status: Mapped[JobStatus] = mapped_column(
