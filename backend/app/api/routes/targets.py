@@ -9,6 +9,7 @@ from app.models.job import Job
 from app.models.target import AuthorizationStatus, Target, TargetType
 from app.schemas.job import JobResponse
 from app.schemas.target import TargetResponse, TargetUpdateRequest
+from app.scheduling.service import disable_schedules_for_asset
 
 router = APIRouter(prefix="/targets", tags=["targets"])
 
@@ -67,6 +68,9 @@ async def delete_target(target_id: uuid.UUID, db: AsyncSession = Depends(get_db)
     target = await db.get(Target, target_id)
     if target is None:
         raise HTTPException(status_code=404, detail="target not found")
+    # Target IS Asset (Phase 13, same table) -- same schedule cleanup as
+    # DELETE /api/assets/{id} (Phase 14).
+    await disable_schedules_for_asset(db, target_id)
     await db.delete(target)
     await db.commit()
 

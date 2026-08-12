@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.session import get_db
 from app.jobs.pubsub import publish_job_update
 from app.jobs.queue import get_queue
+from app.jobs.service import prepare_job
 from app.jobs.tasks import execute_job
 from app.models.job import Job, JobStatus
 from app.models.target import Target
@@ -20,25 +21,15 @@ router = APIRouter(prefix="/jobs", tags=["jobs"])
 
 @router.post("", response_model=JobResponse, status_code=201)
 async def create_job(request: JobCreateRequest, db: AsyncSession = Depends(get_db)) -> Job:
-    try:
-        tool_def = registry.get_tool(request.tool)
-    except registry.ToolNotFoundError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
-
-    profile_args: dict = {}
-    if request.profile is not None:
-        try:
-            profile_args = registry.get_profile(tool_def, request.profile).args
-        except registry.ToolValidationError as exc:
-            raise HTTPException(status_code=400, detail=str(exc)) from exc
-
     project_id = None
     target_id = None
     target_address = request.target
 
     if request.target_id is not None:
         # This is the ONLY enforcement point for target authorization —
-        # the AI planner, the frontend, and every other caller all funnel
+        # the AI planner, the frontend, the Phase 14 scheduler (via
+        # app.jobs.service.prepare_job + this same is_executable check, see
+        # app/scheduling/ticker.py), and every other caller all funnel
         # through here. UNKNOWN is rejected; nothing upstream can bypass it.
         target = await db.get(Target, request.target_id)
         if target is None:
@@ -55,13 +46,12 @@ async def create_job(request: JobCreateRequest, db: AsyncSession = Depends(get_d
         target_id = target.id
         target_address = target.address
 
-    full_params = {**profile_args, **request.options, "target": target_address}
     try:
-        registry.build_command(request.tool, full_params)
+        prepared = prepare_job(request.tool, request.profile, request.options, target_address, request.timeout)
+    except registry.ToolNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
     except registry.ToolValidationError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-
-    effective_timeout = registry.effective_timeout(tool_def, request.profile, request.timeout)
 
     job = Job(
         tool=request.tool,
@@ -69,7 +59,7 @@ async def create_job(request: JobCreateRequest, db: AsyncSession = Depends(get_d
         target=target_address,
         project_id=project_id,
         target_id=target_id,
-        params=full_params,
+        params=prepared.full_params,
         status=JobStatus.QUEUED,
     )
     db.add(job)
@@ -88,10 +78,10 @@ async def create_job(request: JobCreateRequest, db: AsyncSession = Depends(get_d
         execute_job,
         str(job.id),
         request.tool,
-        full_params,
-        effective_timeout,
+        prepared.full_params,
+        prepared.effective_timeout,
         job_id=str(job.id),
-        job_timeout=effective_timeout + 30,
+        job_timeout=prepared.effective_timeout + 30,
     )
 
     return job

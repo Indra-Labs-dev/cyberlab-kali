@@ -35,6 +35,12 @@ class Settings(BaseSettings):
     labmanager_url: str = "http://cyberlab-labmanager:9100"
     labmanager_token: str = "change-me-in-production"
 
+    # Phase 14 -- how often the worker's background thread (app/scheduling/
+    # ticker.py) checks for due ScheduledJobs. Short enough to keep
+    # intervals as low as MIN_INTERVAL_SECONDS meaningful, long enough to
+    # not hammer Postgres with an idle stack.
+    scheduler_poll_interval_seconds: int = 15
+
     @property
     def cors_origins(self) -> list[str]:
         return [origin.strip() for origin in self.cors_origins_raw.split(",") if origin.strip()]

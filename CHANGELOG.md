@@ -1,5 +1,96 @@
 # Changelog
 
+## Unreleased — Phase 14 — Continuous Recon + Diff Engine
+
+- **`ScheduledJob`** (`backend/app/models/scheduled_job.py`): periodic
+  re-execution of a tool+profile+params against an Asset. Fixed interval
+  (`interval_seconds`, `MIN_INTERVAL_SECONDS = 300` floor) rather than cron
+  expressions — deliberate simplicity, covers the "every 6 hours" use case
+  without a cron parser dependency. `status` `ACTIVE`/`PAUSED`/`DISABLED`;
+  `consecutive_failures`/`last_error` track *scheduling* failures (asset
+  gone/unauthorized, tool/profile invalid) distinct from a scan that ran but
+  failed; auto-pauses after 5 consecutive scheduling failures rather than
+  retrying forever.
+- **Ticker runs as a background thread inside `cyberlab-worker`**
+  (`app/scheduling/ticker.py`, started from `app/jobs/worker.py`) — no new
+  Docker service, no RQ Scheduler/APScheduler/Kafka/RabbitMQ/Redis lock
+  dependency. Due schedules are claimed via Postgres `SELECT ... FOR UPDATE
+  SKIP LOCKED` with `next_run_at` advanced and committed *before* any work
+  happens — the Postgres-native reservation the spec asked for instead of a
+  Redis lock. Verified with two real concurrent Postgres sessions that the
+  same due row is never claimed twice.
+- **A ScheduledJob triggers the exact same path as a manual job, always**:
+  `app/jobs/service.py::prepare_job()` (Tool Registry validation, extracted
+  from `POST /api/jobs`) and `app.targets.authorization.is_executable()`
+  (unchanged since Phase 11) are called identically by the manual route, by
+  schedule creation, by `POST /api/schedules/{id}/run`, and by every
+  automatic tick — no parallel authorization logic exists anywhere in this
+  phase. Verified: an asset whose authorization is revoked after a schedule
+  is created has its next automatic run refused, not silently allowed.
+- **Diff Engine** (`app/diff/engine.py` + `app/diff/service.py`): compares
+  two normalized results (the same dicts already produced by
+  `app/tools/parsers/`, no new result format) for the most recent *SUCCESS*
+  Job with the same asset+tool+profile+params — no baseline, no comparison,
+  this Job just becomes the new baseline. Detects, for the 4 tools whose
+  parsers actually support it: nmap (port opened/closed, service/product/
+  version changed), whatweb (technology added/removed/changed, HTTP status
+  changed), sslscan (certificate subject/expiry changed — issuer and
+  fingerprint are **not** detected, `app/tools/parsers/sslscan.py` doesn't
+  extract them, documented rather than faked), gobuster (endpoint
+  discovered/disappeared). Only scans the 20 most recent comparable jobs,
+  never the full history.
+- **`AssetChangeEvent`** (`backend/app/models/asset_change_event.py`): 9
+  change types exactly as specified (`PORT_OPENED`/`PORT_CLOSED`/
+  `SERVICE_CHANGED`/`TECHNOLOGY_ADDED`/`TECHNOLOGY_REMOVED`/
+  `TECHNOLOGY_CHANGED`/`CERTIFICATE_CHANGED`/`HTTP_CHANGED`/`OTHER`),
+  severity reuses the existing `Finding.Severity` enum. `old_value`/
+  `new_value` are always coerced through `str()` before storage — they can
+  originate from scanned-target data (service banners, whatweb plugin
+  strings, certificate subjects) and are never trusted as anything but
+  plain text; rendered frontend-side via escaped Vue interpolation, no
+  `v-html` anywhere near them.
+- **New API**: `GET/POST /api/assets/{id}/schedules`, `GET/PATCH/DELETE
+  /api/schedules/{id}`, `POST /api/schedules/{id}/run`, `GET
+  /api/assets/{id}/changes` (filters: `change_type`, `severity`, `before`).
+  `ScheduledJobUpdateRequest` excludes `next_run_at`/`last_run_at`/
+  `last_job_id`/`consecutive_failures`/`asset_id`/`project_id` — those are
+  never directly settable via the API. `AssetChangeEvent` has no
+  create/update route at all, only ever generated server-side.
+- **Deleting an Asset (or a Target — same table since Phase 13) disables its
+  schedules in the same transaction**, not eventually via the FK's `ON
+  DELETE SET NULL` safety net — `app/scheduling/service.py::
+  disable_schedules_for_asset()`, wired into both `DELETE /api/assets/{id}`
+  and `DELETE /api/targets/{id}`.
+- **Frontend**: `/targets/[id]` (the Asset detail page) gained two sections,
+  wired exclusively to `/api/assets/...` (new Phase 14 code never touches
+  the legacy `/api/targets` path, per this phase's Target/Asset convergence
+  audit): **Continuous Recon** (schedule table with tool/profile/frequency/
+  status/next-run/last-run, create form with dynamic profile picker,
+  pause/resume/run-now/delete actions) and **Change Timeline** (severity
+  icons, human-readable summaries, change-type/severity filters, link to
+  the source scan). Loading/error/empty states throughout.
+- **Verified end-to-end against the real Docker stack**: baseline nmap scan
+  against `cyberlab-kali`, a real `nc -l -p 8888` listener started via
+  `docker exec` to genuinely open a port, second scan → `PORT_OPENED`
+  detected and persisted; listener killed, third scan → `PORT_CLOSED`
+  detected. A real `ScheduledJob` (5-minute interval) fired automatically
+  within one poll cycle, observed in `cyberlab-worker` logs. `docker
+  compose restart cyberlab-worker` while the schedule was active: ticker
+  restarted cleanly (log line reappears), a forced-due schedule after
+  restart fired correctly with no duplicate and no loss. Full browser UI
+  flow exercised live: create/pause/resume/run-now/delete a schedule,
+  timeline rendering both real detected changes. 207 tests green (155
+  pre-existing + 52 new), zero modified pre-existing test assertions.
+- **Target/Asset convergence audit**: confirmed `Target` is still a plain
+  alias to `Asset` (same table, Phase 13) — the three remaining
+  `/api/targets` frontend call sites (`ai/index.vue`, `tools/index.vue`,
+  `projects/[id].vue`) are read-only pickers/summaries that cannot diverge
+  from `/api/assets` since they're the same rows; left as documented
+  technical debt rather than touched, since none of this phase's new
+  functionality depends on them.
+- See [docs/phase-14-continuous-recon.md](docs/phase-14-continuous-recon.md)
+  for the full design rationale and verification log.
+
 ## Unreleased — Phase 13 — Asset Model
 
 - **`Target` generalized into `Asset`** (`backend/app/models/asset.py`): same

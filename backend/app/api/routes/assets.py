@@ -9,6 +9,7 @@ from app.models.asset import Asset, AssetCriticality, AssetType, AuthorizationSt
 from app.models.job import Job
 from app.schemas.asset import AssetResponse, AssetUpdateRequest
 from app.schemas.job import JobResponse
+from app.scheduling.service import disable_schedules_for_asset
 
 router = APIRouter(prefix="/assets", tags=["assets"])
 
@@ -70,6 +71,10 @@ async def delete_asset(asset_id: uuid.UUID, db: AsyncSession = Depends(get_db)) 
     asset = await db.get(Asset, asset_id)
     if asset is None:
         raise HTTPException(status_code=404, detail="asset not found")
+    # Same transaction as the delete: any ScheduledJob pointing at this
+    # asset is disabled cleanly rather than left ACTIVE with a dangling
+    # asset_id for the ticker to trip over later (Phase 14).
+    await disable_schedules_for_asset(db, asset_id)
     await db.delete(asset)
     await db.commit()
 

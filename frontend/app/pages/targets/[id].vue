@@ -10,11 +10,44 @@ interface ArgumentDef {
   description: string;
 }
 
+interface ProfileDef {
+  name: string;
+  description: string;
+}
+
 interface ToolDef {
   name: string;
   category: string;
   description: string;
   arguments: ArgumentDef[];
+  profiles: ProfileDef[];
+}
+
+interface ScheduledJob {
+  id: string;
+  asset_id: string | null;
+  tool: string;
+  profile: string | null;
+  params: Record<string, unknown>;
+  interval_seconds: number;
+  status: "ACTIVE" | "PAUSED" | "DISABLED";
+  next_run_at: string;
+  last_run_at: string | null;
+  last_job_id: string | null;
+  consecutive_failures: number;
+  last_error: string | null;
+}
+
+interface AssetChangeEvent {
+  id: string;
+  job_id: string;
+  previous_job_id: string | null;
+  change_type: string;
+  severity: "INFO" | "LOW" | "MEDIUM" | "HIGH" | "CRITICAL";
+  field: string;
+  old_value: string | null;
+  new_value: string | null;
+  detected_at: string;
 }
 
 interface Asset {
@@ -57,6 +90,25 @@ interface Finding {
 
 const CRITICALITIES = ["LOW", "MEDIUM", "HIGH", "CRITICAL"] as const;
 const AUTH_STATUSES = ["LAB", "AUTHORIZED", "LOCAL", "UNKNOWN"] as const;
+const INTERVAL_PRESETS = [
+  { label: "5 minutes", seconds: 300 },
+  { label: "15 minutes", seconds: 900 },
+  { label: "1 hour", seconds: 3600 },
+  { label: "6 hours", seconds: 21600 },
+  { label: "12 hours", seconds: 43200 },
+  { label: "24 hours", seconds: 86400 },
+];
+const CHANGE_TYPES = [
+  "PORT_OPENED",
+  "PORT_CLOSED",
+  "SERVICE_CHANGED",
+  "TECHNOLOGY_ADDED",
+  "TECHNOLOGY_REMOVED",
+  "TECHNOLOGY_CHANGED",
+  "CERTIFICATE_CHANGED",
+  "HTTP_CHANGED",
+  "OTHER",
+];
 
 const route = useRoute();
 const router = useRouter();
@@ -70,6 +122,21 @@ const findings = ref<Finding[]>([]);
 const tools = ref<ToolDef[]>([]);
 const loading = ref(true);
 const loadError = ref("");
+
+const schedules = ref<ScheduledJob[]>([]);
+const schedulesLoading = ref(true);
+const schedulesError = ref("");
+const showScheduleForm = ref(false);
+const newSchedule = reactive({ tool: "", profile: "", intervalSeconds: 3600 });
+const creatingSchedule = ref(false);
+const createScheduleError = ref("");
+const busyScheduleIds = ref<Set<string>>(new Set());
+
+const changes = ref<AssetChangeEvent[]>([]);
+const changesLoading = ref(true);
+const changesError = ref("");
+const changeTypeFilter = ref("");
+const changeSeverityFilter = ref("");
 
 const authColor: Record<string, string> = {
   LAB: "bg-emerald-500/15 text-emerald-400",
@@ -110,6 +177,48 @@ function formatDate(iso: string | null) {
   return new Date(iso).toLocaleString();
 }
 
+function relativeTime(iso: string) {
+  const diffMs = Date.now() - new Date(iso).getTime();
+  const minutes = Math.floor(diffMs / 60_000);
+  if (minutes < 1) return "just now";
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  return `${days}d ago`;
+}
+
+function intervalLabel(seconds: number) {
+  const preset = INTERVAL_PRESETS.find((p) => p.seconds === seconds);
+  if (preset) return preset.label;
+  if (seconds % 3600 === 0) return `${seconds / 3600}h`;
+  return `${Math.round(seconds / 60)}m`;
+}
+
+const changeIcon: Record<string, string> = {
+  INFO: "🟢",
+  LOW: "🟢",
+  MEDIUM: "🟡",
+  HIGH: "🔴",
+  CRITICAL: "🔴",
+};
+
+function changeSummary(change: AssetChangeEvent): string {
+  const label = change.field;
+  if (change.change_type === "PORT_OPENED") return `Port ${label.replace("port:", "")} opened`;
+  if (change.change_type === "PORT_CLOSED") return `Port ${label.replace("port:", "")} closed`;
+  if (change.change_type.startsWith("TECHNOLOGY")) {
+    const tech = label.replace("technology:", "");
+    if (change.change_type === "TECHNOLOGY_ADDED") return `${tech} detected`;
+    if (change.change_type === "TECHNOLOGY_REMOVED") return `${tech} no longer detected`;
+    return `${tech} changed`;
+  }
+  if (change.change_type === "CERTIFICATE_CHANGED") return `Certificate changed (${label})`;
+  if (change.change_type === "HTTP_CHANGED") return `HTTP status changed`;
+  if (change.change_type === "SERVICE_CHANGED") return `Service changed on ${label.replace("port:", "")}`;
+  return label;
+}
+
 async function loadAll() {
   loading.value = true;
   loadError.value = "";
@@ -129,6 +238,91 @@ async function loadAll() {
     loadError.value = err?.data?.detail || "Failed to load asset";
   } finally {
     loading.value = false;
+  }
+}
+
+async function loadSchedules() {
+  schedulesLoading.value = true;
+  schedulesError.value = "";
+  try {
+    schedules.value = await apiFetch<ScheduledJob[]>(`/api/assets/${assetId}/schedules`);
+  } catch (err: any) {
+    schedulesError.value = err?.data?.detail || "Failed to load scheduled scans";
+  } finally {
+    schedulesLoading.value = false;
+  }
+}
+
+async function loadChanges() {
+  changesLoading.value = true;
+  changesError.value = "";
+  try {
+    const params = new URLSearchParams();
+    if (changeTypeFilter.value) params.set("change_type", changeTypeFilter.value);
+    if (changeSeverityFilter.value) params.set("severity", changeSeverityFilter.value);
+    const query = params.toString() ? `?${params.toString()}` : "";
+    changes.value = await apiFetch<AssetChangeEvent[]>(`/api/assets/${assetId}/changes${query}`);
+  } catch (err: any) {
+    changesError.value = err?.data?.detail || "Failed to load the change timeline";
+  } finally {
+    changesLoading.value = false;
+  }
+}
+
+watch([changeTypeFilter, changeSeverityFilter], loadChanges);
+
+async function createSchedule() {
+  if (!newSchedule.tool) return;
+  creatingSchedule.value = true;
+  createScheduleError.value = "";
+  try {
+    await apiFetch(`/api/assets/${assetId}/schedules`, {
+      method: "POST",
+      body: {
+        tool: newSchedule.tool,
+        profile: newSchedule.profile || null,
+        interval_seconds: newSchedule.intervalSeconds,
+      },
+    });
+    Object.assign(newSchedule, { tool: "", profile: "", intervalSeconds: 3600 });
+    showScheduleForm.value = false;
+    await loadSchedules();
+  } catch (err: any) {
+    createScheduleError.value = err?.data?.detail || "Failed to create scheduled scan";
+  } finally {
+    creatingSchedule.value = false;
+  }
+}
+
+async function setScheduleStatus(schedule: ScheduledJob, status: "ACTIVE" | "PAUSED") {
+  busyScheduleIds.value.add(schedule.id);
+  try {
+    await apiFetch(`/api/schedules/${schedule.id}`, { method: "PATCH", body: { status } });
+    await loadSchedules();
+  } finally {
+    busyScheduleIds.value.delete(schedule.id);
+  }
+}
+
+async function runScheduleNow(schedule: ScheduledJob) {
+  busyScheduleIds.value.add(schedule.id);
+  try {
+    await apiFetch(`/api/schedules/${schedule.id}/run`, { method: "POST" });
+    await Promise.all([loadSchedules(), loadAll()]);
+  } catch (err: any) {
+    schedulesError.value = err?.data?.detail || "Failed to run scheduled scan";
+  } finally {
+    busyScheduleIds.value.delete(schedule.id);
+  }
+}
+
+async function deleteScheduleRow(schedule: ScheduledJob) {
+  busyScheduleIds.value.add(schedule.id);
+  try {
+    await apiFetch(`/api/schedules/${schedule.id}`, { method: "DELETE" });
+    await loadSchedules();
+  } finally {
+    busyScheduleIds.value.delete(schedule.id);
   }
 }
 
@@ -218,7 +412,11 @@ async function runScan() {
   }
 }
 
-onMounted(loadAll);
+onMounted(() => {
+  loadAll();
+  loadSchedules();
+  loadChanges();
+});
 </script>
 
 <template>
@@ -394,6 +592,194 @@ onMounted(loadAll);
         >
           {{ scanning ? "Starting…" : "Run" }}
         </button>
+      </div>
+
+      <div class="rounded-lg border border-slate-800 bg-slate-900/40 p-4">
+        <div class="mb-3 flex items-center justify-between">
+          <h2 class="text-sm font-semibold text-slate-300">Continuous Recon</h2>
+          <button
+            class="rounded-md bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-emerald-500"
+            @click="showScheduleForm = !showScheduleForm"
+          >
+            + Schedule scan
+          </button>
+        </div>
+
+        <div v-if="showScheduleForm" class="mb-4 rounded-lg border border-slate-800 bg-slate-950/50 p-3">
+          <div class="grid grid-cols-1 gap-3 sm:grid-cols-3">
+            <div>
+              <label class="mb-1 block text-xs text-slate-500">Tool *</label>
+              <select
+                v-model="newSchedule.tool"
+                class="w-full rounded-md border border-slate-700 bg-slate-950 px-2 py-1.5 text-sm text-slate-200"
+                @change="newSchedule.profile = ''"
+              >
+                <option value="">Select a tool…</option>
+                <option v-for="t in tools" :key="t.name" :value="t.name">{{ t.name }}</option>
+              </select>
+            </div>
+            <div>
+              <label class="mb-1 block text-xs text-slate-500">Profile</label>
+              <select
+                v-model="newSchedule.profile"
+                class="w-full rounded-md border border-slate-700 bg-slate-950 px-2 py-1.5 text-sm text-slate-200"
+                :disabled="!newSchedule.tool"
+              >
+                <option value="">(default)</option>
+                <option
+                  v-for="p in tools.find((t) => t.name === newSchedule.tool)?.profiles || []"
+                  :key="p.name"
+                  :value="p.name"
+                >
+                  {{ p.name }}
+                </option>
+              </select>
+            </div>
+            <div>
+              <label class="mb-1 block text-xs text-slate-500">Frequency</label>
+              <select
+                v-model.number="newSchedule.intervalSeconds"
+                class="w-full rounded-md border border-slate-700 bg-slate-950 px-2 py-1.5 text-sm text-slate-200"
+              >
+                <option v-for="p in INTERVAL_PRESETS" :key="p.seconds" :value="p.seconds">Every {{ p.label }}</option>
+              </select>
+            </div>
+          </div>
+          <p v-if="createScheduleError" class="mt-2 text-sm text-red-400">{{ createScheduleError }}</p>
+          <button
+            class="mt-3 rounded-md bg-emerald-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-emerald-500 disabled:opacity-50"
+            :disabled="creatingSchedule || !newSchedule.tool"
+            @click="createSchedule"
+          >
+            {{ creatingSchedule ? "Creating…" : "Create schedule" }}
+          </button>
+        </div>
+
+        <p v-if="schedulesLoading" class="text-sm text-slate-600">Loading…</p>
+        <p v-else-if="schedulesError" class="text-sm text-red-400">{{ schedulesError }}</p>
+        <p v-else-if="schedules.length === 0" class="text-sm text-slate-600">
+          No scheduled scans yet. Click "+ Schedule scan" to set up periodic monitoring.
+        </p>
+        <div v-else class="overflow-x-auto">
+          <table class="w-full text-sm">
+            <thead class="text-left text-xs uppercase tracking-wide text-slate-500">
+              <tr>
+                <th class="py-1.5 pr-3">Tool</th>
+                <th class="py-1.5 pr-3">Frequency</th>
+                <th class="py-1.5 pr-3">Status</th>
+                <th class="py-1.5 pr-3">Next run</th>
+                <th class="py-1.5 pr-3">Last run</th>
+                <th class="py-1.5 pr-3">Actions</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-slate-800">
+              <tr v-for="s in schedules" :key="s.id">
+                <td class="py-2 pr-3 text-slate-200">
+                  {{ s.tool }}<span v-if="s.profile" class="text-slate-500"> ({{ s.profile }})</span>
+                </td>
+                <td class="py-2 pr-3 text-slate-400">every {{ intervalLabel(s.interval_seconds) }}</td>
+                <td class="py-2 pr-3">
+                  <span
+                    class="rounded px-1.5 py-0.5 text-xs"
+                    :class="{
+                      'bg-emerald-500/15 text-emerald-400': s.status === 'ACTIVE',
+                      'bg-amber-500/15 text-amber-400': s.status === 'PAUSED',
+                      'bg-slate-700/50 text-slate-400': s.status === 'DISABLED',
+                    }"
+                  >
+                    {{ s.status }}
+                  </span>
+                  <span v-if="s.consecutive_failures > 0" class="ml-1 text-xs text-red-400" :title="s.last_error || ''">
+                    ⚠ {{ s.consecutive_failures }}
+                  </span>
+                </td>
+                <td class="py-2 pr-3 text-slate-500">{{ s.status === "ACTIVE" ? relativeTime(s.next_run_at) : "—" }}</td>
+                <td class="py-2 pr-3 text-slate-500">
+                  <NuxtLink v-if="s.last_job_id" :to="`/scans/${s.last_job_id}`" class="text-emerald-400 hover:underline">
+                    {{ formatDate(s.last_run_at) }}
+                  </NuxtLink>
+                  <span v-else>never</span>
+                </td>
+                <td class="py-2 pr-3">
+                  <div class="flex gap-2 text-xs">
+                    <button
+                      v-if="s.status === 'ACTIVE'"
+                      class="text-slate-400 hover:text-amber-400 disabled:opacity-50"
+                      :disabled="busyScheduleIds.has(s.id)"
+                      @click="setScheduleStatus(s, 'PAUSED')"
+                    >
+                      Pause
+                    </button>
+                    <button
+                      v-else-if="s.status === 'PAUSED'"
+                      class="text-slate-400 hover:text-emerald-400 disabled:opacity-50"
+                      :disabled="busyScheduleIds.has(s.id)"
+                      @click="setScheduleStatus(s, 'ACTIVE')"
+                    >
+                      Resume
+                    </button>
+                    <button
+                      v-if="s.status !== 'DISABLED'"
+                      class="text-slate-400 hover:text-emerald-400 disabled:opacity-50"
+                      :disabled="busyScheduleIds.has(s.id)"
+                      @click="runScheduleNow(s)"
+                    >
+                      Run now
+                    </button>
+                    <button
+                      class="text-slate-400 hover:text-red-400 disabled:opacity-50"
+                      :disabled="busyScheduleIds.has(s.id)"
+                      @click="deleteScheduleRow(s)"
+                    >
+                      Delete
+                    </button>
+                  </div>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="rounded-lg border border-slate-800 bg-slate-900/40 p-4">
+        <div class="mb-3 flex flex-wrap items-center justify-between gap-2">
+          <h2 class="text-sm font-semibold text-slate-300">Change Timeline</h2>
+          <div class="flex gap-2">
+            <select
+              v-model="changeTypeFilter"
+              class="rounded-md border border-slate-700 bg-slate-950 px-2 py-1 text-xs text-slate-300"
+            >
+              <option value="">All change types</option>
+              <option v-for="ct in CHANGE_TYPES" :key="ct" :value="ct">{{ ct }}</option>
+            </select>
+            <select
+              v-model="changeSeverityFilter"
+              class="rounded-md border border-slate-700 bg-slate-950 px-2 py-1 text-xs text-slate-300"
+            >
+              <option value="">All severities</option>
+              <option v-for="sev in ['INFO', 'LOW', 'MEDIUM', 'HIGH', 'CRITICAL']" :key="sev" :value="sev">{{ sev }}</option>
+            </select>
+          </div>
+        </div>
+
+        <p v-if="changesLoading" class="text-sm text-slate-600">Loading…</p>
+        <p v-else-if="changesError" class="text-sm text-red-400">{{ changesError }}</p>
+        <p v-else-if="changes.length === 0" class="text-sm text-slate-600">
+          No changes detected yet. Run the same scan twice (manually or via a schedule) to start comparing.
+        </p>
+        <div v-else class="space-y-3">
+          <div v-for="c in changes" :key="c.id" class="flex items-start gap-3 border-b border-slate-800 pb-3 last:border-0 last:pb-0">
+            <span class="mt-0.5 text-base leading-none">{{ changeIcon[c.severity] }}</span>
+            <div class="min-w-0 flex-1">
+              <p class="text-sm text-slate-200">{{ changeSummary(c) }}</p>
+              <p v-if="c.old_value || c.new_value" class="truncate text-xs text-slate-500">
+                {{ c.old_value || "—" }} → {{ c.new_value || "—" }}
+              </p>
+              <p class="text-xs text-slate-600">{{ relativeTime(c.detected_at) }} · {{ formatDate(c.detected_at) }}</p>
+            </div>
+            <NuxtLink :to="`/scans/${c.job_id}`" class="shrink-0 text-xs text-emerald-400 hover:underline">scan</NuxtLink>
+          </div>
+        </div>
       </div>
 
       <div class="rounded-lg border border-slate-800 bg-slate-900/40 p-4">

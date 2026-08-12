@@ -2,6 +2,7 @@ from datetime import datetime, timezone
 
 from app.assets.activity import record_asset_activity, technologies_from_whatweb
 from app.db.sync_session import get_sync_session
+from app.diff.service import generate_change_events
 from app.findings.extractor import extract_findings
 from app.jobs.kali_client import KaliAgentError, run_tool
 from app.jobs.pubsub import publish_job_update
@@ -86,6 +87,12 @@ def execute_job(job_id: str, tool_name: str, params: dict, timeout: int | None =
                     else None
                 )
                 record_asset_activity(session, job.target_id, job.finished_at, technologies)
+
+                # Diff Engine: only meaningful for a job that actually
+                # produced a comparable result (SUCCESS) -- a FAILED run
+                # (e.g. tool crashed) has nothing to compare.
+                if job.status == JobStatus.SUCCESS:
+                    generate_change_events(session, job)
 
             session.commit()
             publish_job_update(

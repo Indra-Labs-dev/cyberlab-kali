@@ -15,7 +15,7 @@ Nuxt (frontend, :3300) --REST/WS--> FastAPI (api, :8300) --+--> PostgreSQL (:554
 |---|---|---|---|
 | `cyberlab-frontend` | Nuxt 4 UI | cyberlab-backend | 3300 |
 | `cyberlab-api` | FastAPI (REST + WebSocket) | cyberlab-backend, cyberlab-kali-net | 8300 |
-| `cyberlab-worker` | Worker RQ (exécution des jobs d'outils) | cyberlab-backend, cyberlab-kali-net | — |
+| `cyberlab-worker` | Worker RQ (exécution des jobs d'outils) + ticker Continuous Recon (thread, Phase 14) | cyberlab-backend, cyberlab-kali-net | — |
 | `cyberlab-postgres` | Persistance | cyberlab-backend | 55432 |
 | `cyberlab-redis` | File de jobs / pub-sub | cyberlab-backend | 63790 |
 | `cyberlab-kali` | Outils de sécurité (31, voir [tools.md](tools.md)), isolé, `cap_add: [NET_RAW]` narrow depuis la Phase 12 | cyberlab-kali-net | — |
@@ -38,6 +38,27 @@ Project (1) ──< Asset (N) ──< Job (N, via target_id)
 - **`Job.project_id` / `Job.target_id`** : optionnels, `ForeignKey(..., ondelete="SET NULL")` — supprimer un Project ou un Asset ne détruit jamais l'historique des jobs déjà exécutés, il perd juste son rattachement. Un job peut toujours être créé avec une cible en texte libre (`target`) sans passer par le modèle Asset, pour compatibilité avec le flux historique (Phases 3–9) — voir la nuance documentée dans l'audit d'autorisation de [security.md](security.md).
 - **Application de l'autorisation : un seul point d'entrée, inchangé depuis la Phase 11.** `POST /api/jobs` est l'unique endroit qui vérifie `is_executable(asset)` avant de créer un job lié à un `target_id` (`backend/app/targets/authorization.py`) — ni le Mission Planner IA, ni le frontend, ni aucun autre appelant n'a de chemin de contournement. La Phase 13 n'a touché ni cette fonction ni son point d'application.
 - Migration Phase 13 (`backend/alembic/versions/392e4638a4d8_...py`) : renomme `targets` → `assets` et `target_type` → `type` (Postgres met à jour la FK `jobs.target_id` automatiquement), ajoute `criticality`/`tags`/`technologies`/`first_seen`/`last_seen`, backfill `first_seen`/`last_seen` depuis l'historique des jobs existants. Aucune ligne supprimée, aucune donnée existante perdue.
+
+## Continuous Recon + Diff Engine (Phase 14)
+
+```
+Asset ──< ScheduledJob (Postgres, réutilise le Job Engine — pas de nouveau moteur)
+              │
+     ticker (thread dans cyberlab-worker, pas de nouveau service)
+              │
+     app.jobs.service.prepare_job() + is_executable()  (même chemin que POST /api/jobs)
+              │
+     Job Engine existant → Normalized Result (parsers Phase 3/12)
+              │
+     Diff Engine (app/diff/) — comparaison avec le dernier Job compatible (même asset+tool+profile+params)
+              │
+     AssetChangeEvent (Postgres) → Timeline sur la page Asset
+```
+
+- **`ScheduledJob`** (`backend/app/models/scheduled_job.py`) : planifie la ré-exécution périodique d'un tool+profile+params sur un Asset. Intervalle fixe (`interval_seconds`, plancher `MIN_INTERVAL_SECONDS = 300`) plutôt qu'une expression cron — simplicité délibérée. `status` `ACTIVE`/`PAUSED`/`DISABLED`. Réservation des échéances via `SELECT ... FOR UPDATE SKIP LOCKED` + avancement immédiat de `next_run_at` (verrouillage Postgres natif, pas de verrou Redis) — voir [phase-14-continuous-recon.md](phase-14-continuous-recon.md).
+- **Ticker** (`app/scheduling/ticker.py`) : thread démon dans le process `cyberlab-worker` existant (pas un service Docker séparé), poll toutes les `scheduler_poll_interval_seconds` (15s par défaut). Réutilise `app/jobs/service.py::prepare_job()` (extrait de `POST /api/jobs`) et `is_executable()` — un `ScheduledJob` ne peut jamais créer de Job en dehors du Policy Engine existant.
+- **`AssetChangeEvent`** (`backend/app/models/asset_change_event.py`) : sortie du Diff Engine (`app/diff/`), qui compare les résultats normalisés de deux Jobs successifs compatibles (même Asset/tool/profile/params) pour nmap/whatweb/sslscan/gobuster. 9 types de changement, sévérité réutilisant l'enum `Finding.Severity` existant. `ON DELETE CASCADE` avec `Asset` (l'historique de changements n'a pas de sens sans l'asset).
+- **Suppression d'Asset/Target** : `disable_schedules_for_asset()` (`app/scheduling/service.py`) désactive proprement (`DISABLED`) tout `ScheduledJob` associé, dans la même transaction que la suppression — jamais un schedule orphelin pointant sur un asset disparu.
 
 ## Décisions architecturales
 
