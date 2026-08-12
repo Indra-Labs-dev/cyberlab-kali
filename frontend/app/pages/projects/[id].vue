@@ -63,7 +63,7 @@ const findings = ref<Finding[]>([]);
 const labs = ref<LabInstance[]>([]);
 const reports = ref<ReportMeta[]>([]);
 const loading = ref(true);
-const tab = ref<"overview" | "targets" | "scans" | "findings" | "labs" | "ai" | "reports">("overview");
+const tab = ref<"overview" | "targets" | "scans" | "findings" | "labs" | "ai" | "reports" | "graph">("overview");
 
 const severityColor: Record<string, string> = {
   INFO: "bg-slate-700/50 text-slate-300",
@@ -121,7 +121,7 @@ onMounted(async () => {
     <div v-else-if="project">
       <div class="flex gap-1 border-b border-slate-800 px-8">
         <button
-          v-for="t in ['overview', 'targets', 'scans', 'findings', 'labs', 'ai', 'reports']"
+          v-for="t in ['overview', 'targets', 'scans', 'findings', 'labs', 'ai', 'reports', 'graph']"
           :key="t"
           class="border-b-2 px-3 py-2 text-sm capitalize transition-colors"
           :class="tab === t ? 'border-emerald-500 text-emerald-400' : 'border-transparent text-slate-500 hover:text-slate-300'"
@@ -253,6 +253,10 @@ onMounted(async () => {
             </a>
           </div>
         </div>
+      </div>
+
+      <div v-else-if="tab === 'graph'" class="px-8 py-6">
+        <SecurityGraph :base-url="`/api/graph/projects/${projectId}`" />
       </div>
     </div>
   </div>

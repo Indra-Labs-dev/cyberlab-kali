@@ -1,5 +1,87 @@
 # Changelog
 
+## Unreleased — Phase 17 — Security Graph
+
+- **PostgreSQL only, no graph database**: a single `graph_edges` table
+  (`backend/app/models/graph_edge.py`) — no Neo4j, no new microservice, at
+  CyberLab's current scale (hundreds of edges per Asset) a recursive CTE
+  over an indexed table is simple and stays transactionally consistent
+  with the rest of the system.
+- **5 node types** (`ASSET`, `FINDING`, `CVE`, `SERVICE`, `TECHNOLOGY`),
+  no more. `ASSET`/`FINDING` reference real rows; `CVE`/`SERVICE`/
+  `TECHNOLOGY` are virtual nodes identified by a natural key
+  (`CVE-2021-44228`, `80/tcp`, `Apache`) — no local CVE/Service/Technology
+  table created just to satisfy the graph model.
+- **5 fixed edge rules, not a rule engine** (`backend/app/graph/builder.py`):
+  `HAS_FINDING`, `EXPOSES` (nmap/masscan open ports only — whatweb/nuclei
+  never produce one, they observe an application, not a confirmed port),
+  `USES_TECHNOLOGY` (from `Asset.technologies`, already real data since
+  Phase 13, never re-derived), `REFERENCES_CVE` (from `Finding.cve_ids`),
+  `RELATED_TO` (Finding↔Finding mirrors Phase 16's `FindingRelation`
+  verbatim; Asset↔Asset only for two assets in the *same* project sharing
+  an observed technology — the only Asset-Asset relationship honestly
+  derivable from current data). Every edge carries a human-readable
+  `reason` — never a silent guess.
+- **Idempotent by construction**: `INSERT ... ON CONFLICT (from_type,
+  from_id, to_type, to_id, relation) DO UPDATE`, atomic in one statement —
+  simpler than Phase 16's Finding upsert on purpose, since an edge carries
+  no accumulated state to merge. Verified real: 42 edges before/after a
+  full rebuild, before/after a repeat scan, before/after `docker compose
+  restart cyberlab-worker`, zero duplicates found by an explicit `GROUP BY
+  ... HAVING count(*) > 1` check.
+- **Depth-limited, cycle-safe traversal** (`backend/app/graph/queries.py`):
+  a single `WITH RECURSIVE` CTE, bidirectional walk with a `visited` array
+  guarding against cycles, `MAX_GRAPH_DEPTH = 3` enforced server-side
+  regardless of what a caller requests. Verified against a real 3-node
+  cycle (`A → B → C → A`, an actual case the Asset↔Asset rule can produce)
+  — terminates in ~46ms instead of looping forever.
+- **New API**: `GET /api/graph/{assets,findings,nodes,projects}/...` (depth
+  query param, `404` for an unknown real node, never `404` for an unknown
+  virtual one — an empty graph is the honest answer) and `POST
+  /api/graph/rebuild` (queued via the existing RQ queue, same pattern as
+  the Phase 15 intelligence sync trigger — never inline in the request,
+  and RQ's one-job-at-a-time processing serializes concurrent rebuilds for
+  free).
+- **Frontend**: `SecurityGraph.vue`, the first graph-visualization
+  dependency in the project (Cytoscape.js — no existing library covered
+  this, dynamically imported the same way `@xterm/xterm` already is on
+  the Terminal page). Zoom/pan/select, type filters, text search, depth
+  1/2/3, Fit/Reset — clicking a node opens a side panel with its real
+  metadata and every connection's relation + human-readable reason, with
+  a link to the node's actual CyberLab page. Added as a new section on
+  `/targets/[id]` and a new tab on `/projects/[id]` — no existing page
+  content replaced.
+- **Security audit**: IDOR/cross-project leakage, SQL injection via
+  `node_id`, negative/zero/oversized depth, recursive-cycle DoS, XSS via
+  labels/reason, mass assignment, unauthenticated rebuild — all verified,
+  see docs/security.md. The Asset↔Asset rule's same-project scoping
+  double as the cross-project leakage protection: two assets in different
+  projects can never be linked, so a traversal can never cross a project
+  boundary through it (verified:
+  `test_build_graph_never_links_assets_across_different_projects`).
+- **Migration**: additive only (one new table). Real backup taken before
+  any change; upgrade → verified → downgrade → verified → upgrade, all
+  run against the real dev database before any data existed in
+  `graph_edges` (the graph being reconstructible at any time from existing
+  Findings/Assets, no historical edge is fabricated).
+- **Full pipeline verified against the real Docker stack**: the DVWA
+  Asset from Phase 16's E2E reused, graph built directly against real
+  PostgreSQL (42 correct edges on the first attempt), verified again via
+  the real API and in a real browser (graph rendered on both the Asset and
+  Project pages, node clicks opening the side panel with real connections,
+  depth selector working, zero console errors), `POST /api/graph/rebuild`
+  confirmed processed by the real RQ worker in its logs. 39 new tests, 406
+  total green (367 pre-existing + 39 new).
+- **Known limitation, honestly reported rather than simulated**: the
+  `REFERENCES_CVE` rule is verified by a real-database unit test but not
+  by a fresh live nuclei scan against DVWA in this phase, since the
+  Phase 15 test template that produced a genuine CVE match was
+  deliberately removed from the Kali container after that phase's own
+  verification, and no template currently loaded reliably produces a CVE
+  against a stock DVWA container.
+- See [docs/phase-17-security-graph.md](docs/phase-17-security-graph.md)
+  for the full architecture, audit, and verification log.
+
 ## Unreleased — Phase 16 — Correlation, Deduplication & Finding Lifecycle
 
 - **Deduplication signature** (`backend/app/findings/signature.py`): pure,

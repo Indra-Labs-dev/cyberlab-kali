@@ -6,8 +6,10 @@ from app.diff.service import generate_change_events
 from app.findings.correlation import correlate_asset_findings
 from app.findings.extractor import extract_findings
 from app.findings.service import upsert_finding
+from app.graph.builder import build_graph_for_asset
 from app.jobs.kali_client import KaliAgentError, run_tool
 from app.jobs.pubsub import publish_job_update
+from app.models.asset import Asset
 from app.models.job import Job, JobStatus
 from app.risk.service import seed_cvss_from_tool
 from app.tools import registry
@@ -117,6 +119,15 @@ def execute_job(job_id: str, tool_name: str, params: dict, timeout: int | None =
                 # (e.g. tool crashed) has nothing to compare.
                 if job.status == JobStatus.SUCCESS:
                     generate_change_events(session, job)
+
+                    # Security Graph (Phase 17): rebuilt from this asset's
+                    # current Findings/technologies/relations -- after
+                    # record_asset_activity above so a technology just
+                    # observed by this job is already reflected. Idempotent,
+                    # never a duplicate edge on repeated scans.
+                    asset = session.get(Asset, job.target_id)
+                    if asset is not None:
+                        build_graph_for_asset(session, asset)
 
             session.commit()
             publish_job_update(

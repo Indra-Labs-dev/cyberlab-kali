@@ -108,6 +108,16 @@ Les findings sont créés **automatiquement** à la fin de chaque job `SUCCESS` 
 - `POST /api/intelligence/sync` — déclenche immédiatement un cycle de synchronisation EPSS + CISA KEV + NVD (via la queue RQ existante, `202 {"status": "queued"}`) au lieu d'attendre le cycle quotidien automatique. Utile pour un rafraîchissement à la demande ; ne bloque jamais sur un appel réseau.
 - `GET /api/intelligence/status` — état de chaque source (`epss`/`cisa_kev`/`nvd`) : `last_attempt_at`/`last_success_at`/`last_error`/`details`.
 
+## Security Graph (Phase 17 — voir [phase-17-security-graph.md](phase-17-security-graph.md))
+
+- `GET /api/graph/assets/{id}?depth=1|2|3` — graphe local autour d'un Asset (`404` si inconnu). `depth` par défaut `1`, borné `[1, 3]` (`422` en dehors, y compris négatif).
+- `GET /api/graph/findings/{id}?depth=` — graphe local autour d'un Finding (`404` si inconnu).
+- `GET /api/graph/nodes/{type}/{id}?depth=` — variante générique pour n'importe quel type de nœud (`ASSET`/`FINDING`/`CVE`/`SERVICE`/`TECHNOLOGY`, `400` si type inconnu). `404` pour un `ASSET`/`FINDING` inconnu ; jamais `404` pour un nœud virtuel (`CVE`/`SERVICE`/`TECHNOLOGY`) inconnu — un graphe vide est la réponse honnête, ces types n'ont pas de table à interroger.
+- `GET /api/graph/projects/{id}?depth=` — graphe fusionné de tous les Assets d'un Project (`404` si le project est inconnu), borné aux 50 premiers assets créés.
+- `POST /api/graph/rebuild` — `{project_id?, asset_id?}` (les deux optionnels, absents = tout le système) → `202 {"status": "queued"}`, exécuté via la queue RQ existante, jamais dans la requête HTTP.
+
+Réponse commune (`GraphResponse`) : `{nodes: [{id, type, label, metadata}], edges: [{id, from_type, from_id, to_type, to_id, relation, source, reason, metadata}]}`. Le graphe est construit automatiquement à la fin de chaque job `SUCCESS` sur un Asset (`app/graph/builder.py::build_graph_for_asset`, appelé depuis `execute_job` juste après le Diff Engine) — jamais besoin d'appeler `rebuild` manuellement en usage normal, cet endpoint sert à une reconstruction explicite (après une correction de données, par exemple).
+
 ## Reports (voir [findings-reports.md](findings-reports.md))
 
 - `POST /api/reports` — `{title, job_ids, format}` (`format`: `html`/`markdown`/`json`/`pdf`) → génère et persiste un rapport (`201`). `404` si aucun `job_id` valide.

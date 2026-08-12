@@ -107,6 +107,31 @@ finding_relations (liens explicites entre Findings distincts, jamais une fusion)
 
 Détail complet, formule de signature, et bugs réels trouvés pendant la vérification E2E : [phase-16-correlation-deduplication.md](phase-16-correlation-deduplication.md).
 
+## Security Graph (Phase 17)
+
+```
+Job.target_id, Finding.evidence (nmap/masscan), Asset.technologies, Finding.cve_ids, FindingRelation (Phase 16)
+   │
+   ▼
+app/graph/builder.py::build_graph_for_asset()  -- 5 règles fixes, jamais un moteur générique
+   │   INSERT ... ON CONFLICT (from_type, from_id, to_type, to_id, relation) DO UPDATE
+   ▼
+graph_edges (PostgreSQL -- pas de Neo4j, pas de nouvelle base)
+   │
+   ▼
+app/graph/queries.py::local_graph()  -- WITH RECURSIVE, cycle-safe, MAX_GRAPH_DEPTH=3
+   │
+   ▼
+GET /api/graph/{assets,findings,projects,nodes}/... → SecurityGraph.vue (Cytoscape.js)
+```
+
+- **`graph_edges`** : une seule table relationnelle (`from_type`/`from_id`/`to_type`/`to_id`/`relation`/`source`/`reason`/`edge_metadata`). `ASSET`/`FINDING` référencent de vraies lignes ; `CVE`/`SERVICE`/`TECHNOLOGY` sont des nœuds virtuels identifiés par une clé naturelle — aucune table CVE/Service/Technology locale créée juste pour le graphe.
+- **`app/graph/builder.py`** : 5 règles fixes (`HAS_FINDING`, `EXPOSES` uniquement nmap/masscan, `USES_TECHNOLOGY` depuis `Asset.technologies` déjà réel, `REFERENCES_CVE` depuis `Finding.cve_ids`, `RELATED_TO` miroir de `FindingRelation` + Asset↔Asset scopé au même projet) — chaque edge porte un `reason` humainement lisible, jamais une supposition silencieuse. Idempotent via `ON CONFLICT DO UPDATE`, atomique.
+- **`app/graph/queries.py`** : traversal bidirectionnel par CTE récursive, tableau `visited` pour la sécurité anti-cycle, `MAX_GRAPH_DEPTH = 3` appliqué côté serveur indépendamment de la demande du client.
+- **Frontend** : `SecurityGraph.vue`, seule dépendance de visualisation ajoutée (Cytoscape.js, chargée dynamiquement comme `@xterm/xterm` sur la page Terminal) — intégrée sur `/targets/[id]` (nouvelle section) et `/projects/[id]` (nouvel onglet), jamais en remplacement de l'existant.
+
+Détail complet, audit initial, et limites connues : [phase-17-security-graph.md](phase-17-security-graph.md).
+
 ## Décisions architecturales
 
 - **File de jobs : RQ plutôt que Celery.** Plus léger (pas de broker AMQP séparé), suffisant pour des jobs d'outils CLI séquentiels/parallèles, cohérent avec Redis déjà présent dans la stack.

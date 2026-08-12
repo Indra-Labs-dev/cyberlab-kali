@@ -2,6 +2,7 @@ from app.models.asset import Asset, AssetCriticality, AssetType, AuthorizationSt
 from app.models.asset_change_event import AssetChangeEvent, ChangeType
 from app.models.finding import Confidence, Finding, FindingStatus, RiskPriority, Severity
 from app.models.finding_relation import FindingRelation, FindingStatusHistory
+from app.models.graph_edge import GraphEdge
 from app.models.job import Job, JobStatus
 from app.models.project import Project, ProjectStatus
 from app.models.report import Report, ReportFormat
@@ -37,4 +38,5 @@ __all__ = [
     "VulnerabilityIntel",
     "CisaKevEntry",
     "IntelSyncState",
+    "GraphEdge",
 ]

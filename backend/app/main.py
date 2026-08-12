@@ -5,6 +5,7 @@ from app.api.routes import (
     ai,
     assets,
     findings,
+    graph,
     health,
     intelligence,
     jobs,
@@ -49,3 +50,4 @@ app.include_router(targets.router, prefix="/api")
 app.include_router(assets.router, prefix="/api")
 app.include_router(schedules.router, prefix="/api")
 app.include_router(intelligence.router, prefix="/api")
+app.include_router(graph.router, prefix="/api")

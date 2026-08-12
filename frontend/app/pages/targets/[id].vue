@@ -850,6 +850,8 @@ onMounted(() => {
         </p>
       </div>
 
+      <SecurityGraph v-if="asset" :base-url="`/api/graph/assets/${assetId}`" />
+
       <div class="rounded-lg border border-slate-800 bg-slate-900/40 p-4">
         <h2 class="mb-2 text-sm font-semibold text-slate-300">Scan history</h2>
         <p v-if="jobs.length === 0" class="text-sm text-slate-600">No scans against this asset yet.</p>
