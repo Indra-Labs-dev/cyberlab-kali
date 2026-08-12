@@ -3,16 +3,23 @@ from datetime import datetime, timezone
 from enum import Enum
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.session import get_db
+from app.findings.lifecycle import InvalidTransitionError, transition_status
 from app.models.asset import Asset
-from app.models.finding import Finding, RiskPriority, Severity
+from app.models.finding import Finding, FindingStatus, RiskPriority, Severity
+from app.models.finding_relation import FindingRelation, FindingStatusHistory
 from app.models.job import Job
 from app.models.vulnerability_intel import VulnerabilityIntel
 from app.risk.calculator import RiskInputs, calculate_risk
-from app.schemas.finding import FindingResponse
+from app.schemas.finding import (
+    FindingRelationResponse,
+    FindingResponse,
+    FindingStatusHistoryResponse,
+    FindingStatusUpdateRequest,
+)
 from app.schemas.risk import RiskComponentResponse, RiskDetailResponse, RiskInputsResponse
 
 router = APIRouter(prefix="/findings", tags=["findings"])
@@ -33,6 +40,8 @@ async def list_findings(
     priority: RiskPriority | None = Query(default=None),
     kev: bool | None = Query(default=None),
     min_risk_score: int | None = Query(default=None, ge=0, le=100),
+    status: FindingStatus | None = Query(default=None),
+    source_tool: str | None = Query(default=None),
     sort: FindingSort = Query(default=FindingSort.CREATED_DESC),
     limit: int = Query(default=100, ge=1, le=500),
     db: AsyncSession = Depends(get_db),
@@ -48,6 +57,10 @@ async def list_findings(
         stmt = stmt.where(Finding.kev == kev)
     if min_risk_score is not None:
         stmt = stmt.where(Finding.risk_score >= min_risk_score)
+    if status is not None:
+        stmt = stmt.where(Finding.status == status)
+    if source_tool is not None:
+        stmt = stmt.where(Finding.source_tool == source_tool)
     if project_id is not None or target_id is not None:
         stmt = stmt.join(Job, Finding.job_id == Job.id)
         if project_id is not None:
@@ -72,6 +85,68 @@ async def get_finding(finding_id: uuid.UUID, db: AsyncSession = Depends(get_db))
     finding = await db.get(Finding, finding_id)
     if finding is None:
         raise HTTPException(status_code=404, detail="finding not found")
+    return finding
+
+
+@router.get("/{finding_id}/history", response_model=list[FindingStatusHistoryResponse])
+async def get_finding_history(finding_id: uuid.UUID, db: AsyncSession = Depends(get_db)) -> list[FindingStatusHistory]:
+    finding = await db.get(Finding, finding_id)
+    if finding is None:
+        raise HTTPException(status_code=404, detail="finding not found")
+
+    result = await db.execute(
+        select(FindingStatusHistory)
+        .where(FindingStatusHistory.finding_id == finding_id)
+        .order_by(FindingStatusHistory.created_at.desc())
+    )
+    return list(result.scalars().all())
+
+
+@router.get("/{finding_id}/relations", response_model=list[FindingRelationResponse])
+async def get_finding_relations(finding_id: uuid.UUID, db: AsyncSession = Depends(get_db)) -> list[FindingRelationResponse]:
+    finding = await db.get(Finding, finding_id)
+    if finding is None:
+        raise HTTPException(status_code=404, detail="finding not found")
+
+    result = await db.execute(
+        select(FindingRelation).where(
+            or_(FindingRelation.finding_id == finding_id, FindingRelation.related_finding_id == finding_id)
+        )
+    )
+    relations = result.scalars().all()
+
+    # Relations are stored with a canonical (string-sorted) ordering that
+    # has nothing to do with the caller's perspective -- normalize so
+    # `finding_id` in the response always matches the requested ID.
+    return [
+        FindingRelationResponse(
+            id=r.id,
+            finding_id=finding_id,
+            related_finding_id=(r.related_finding_id if r.finding_id == finding_id else r.finding_id),
+            rule=r.rule,
+            reason=r.reason,
+            relation_metadata=r.relation_metadata,
+            created_at=r.created_at,
+        )
+        for r in relations
+    ]
+
+
+@router.patch("/{finding_id}/status", response_model=FindingResponse)
+async def update_finding_status(
+    finding_id: uuid.UUID, body: FindingStatusUpdateRequest, db: AsyncSession = Depends(get_db)
+) -> Finding:
+    finding = await db.get(Finding, finding_id)
+    if finding is None:
+        raise HTTPException(status_code=404, detail="finding not found")
+
+    try:
+        transition_status(db, finding, body.status, reason=body.reason, triggered_by="manual")
+    except InvalidTransitionError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    await db.commit()
+    await db.refresh(finding)
     return finding
 
 

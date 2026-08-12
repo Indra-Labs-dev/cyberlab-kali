@@ -3,12 +3,13 @@ from datetime import datetime, timezone
 from app.assets.activity import record_asset_activity, technologies_from_whatweb
 from app.db.sync_session import get_sync_session
 from app.diff.service import generate_change_events
+from app.findings.correlation import correlate_asset_findings
 from app.findings.extractor import extract_findings
+from app.findings.service import upsert_finding
 from app.jobs.kali_client import KaliAgentError, run_tool
 from app.jobs.pubsub import publish_job_update
-from app.models.finding import Finding
 from app.models.job import Job, JobStatus
-from app.risk.service import recalculate_finding_risk, seed_cvss_from_tool
+from app.risk.service import seed_cvss_from_tool
 from app.tools import registry
 from app.tools.parsers import parse_output
 from app.tools.parsers.nuclei import cvss_hints
@@ -75,27 +76,30 @@ def execute_job(job_id: str, tool_name: str, params: dict, timeout: int | None =
             job.status = JobStatus.SUCCESS if raw.get("exit_code") == 0 else JobStatus.FAILED
             job.finished_at = _now()
 
-            new_findings = []
             if job.status == JobStatus.SUCCESS:
-                for finding_data in extract_findings(tool_name, job.target, parsed):
-                    finding = Finding(job_id=job.id, **finding_data)
-                    session.add(finding)
-                    new_findings.append(finding)
-
                 if tool_name == "nuclei":
                     # CVSS nuclei's own templates already carry (see
                     # app/tools/parsers/nuclei.py::cvss_hints) is reused
                     # immediately -- no need to wait for the next NVD sync,
                     # and sync_nvd_cvss() will skip any CVE seeded here.
+                    # Seeded *before* upsert_finding so a brand-new
+                    # Finding's first Risk Score recalculation already sees it.
                     seed_cvss_from_tool(session, cvss_hints(parsed))
 
-                # Risk Score reflects whatever intelligence is available
-                # right now (often nothing yet for a brand new CVE -- that's
-                # the honest N/A state, not an error); recomputed again once
-                # EPSS/KEV/NVD data arrives (app/intel/sync.py) or the
-                # asset's criticality changes (PATCH /api/assets/{id}).
-                for finding in new_findings:
-                    recalculate_finding_risk(session, finding)
+                # Phase 16: deduplicates against any existing Finding
+                # sharing the same signature (same asset+CVE, or same
+                # asset+normalized-title+port/protocol) instead of always
+                # creating a new row -- see app/findings/service.py. Risk
+                # Score (Phase 15) is recomputed inside upsert_finding
+                # itself, only when something risk-relevant actually
+                # changed.
+                for finding_data in extract_findings(tool_name, job.target, parsed):
+                    upsert_finding(session, job, finding_data)
+
+                if job.target_id is not None:
+                    # Cross-tool correlation (Phase 16) -- explicit, fixed
+                    # rules over this asset's findings only, not a global pass.
+                    correlate_asset_findings(session, job.target_id)
 
             if job.target_id is not None:
                 # The tool actually ran against this asset (whether it

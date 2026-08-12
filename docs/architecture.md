@@ -79,6 +79,34 @@ Finding (cve_ids extraits par app/tools/parsers/nuclei.py)
 - **`Finding`** gagne `cve_ids`/`cvss_score`/`epss_score`/`kev`/`risk_score`/`risk_priority`/`risk_calculated_at` — cache matérialisé (jamais la source de vérité), recalculé à l'extraction, après sync d'intelligence, et après changement de `Asset.criticality`.
 - Aucun appel réseau externe synchrone dans un chemin de lecture — `GET /api/findings/{id}/risk` recalcule en direct mais uniquement à partir de données déjà locales (pur CPU).
 
+## Corrélation, Déduplication & Cycle de vie des Findings (Phase 16)
+
+```
+extract_findings() (Phase 9, inchangé)
+   │
+   ▼
+app/findings/service.py::upsert_finding()
+   │   signature = f(asset_id, cve_ids) ou f(asset_id, titre, port, protocole)
+   │   SELECT ... FOR UPDATE existant ? → fusion (observation_count++, source_tools ∪, ...)
+   │                                    : → INSERT (SAVEPOINT, retry sur collision)
+   ▼
+Finding (identité stable, cycle de vie NEW→CONFIRMED→...→REOPENED)
+   │
+   ▼
+app/findings/correlation.py::correlate_asset_findings()
+   │   3 règles fixes (port ouvert nmap↔whatweb/nuclei, technologie partagée)
+   ▼
+finding_relations (liens explicites entre Findings distincts, jamais une fusion)
+```
+
+- **`app/findings/signature.py`** : identité déterministe (SHA-256), CVE-prioritaire puis repli titre/port/protocole, jamais `source_tool`. `NULL` pour tout Finding sans Asset lié (même précédent que le Diff Engine/Risk Score).
+- **`app/findings/service.py::upsert_finding()`** : concurrence gérée par PostgreSQL (`SELECT ... FOR UPDATE` + index unique partiel + SAVEPOINT/retry), pas un verrou applicatif — preuve réelle avec deux sessions concurrentes dans `tests/findings/test_concurrency.py`. Une valeur connue n'est jamais écrasée par une valeur inconnue lors d'une fusion.
+- **`app/findings/lifecycle.py`** : dictionnaire fixe de transitions (pas un moteur de workflow), historique append-only (`finding_status_history`). Réouverture automatique uniquement depuis `REMEDIATED`/`FALSE_POSITIVE` — jamais depuis `ACCEPTED_RISK` (décision humaine protégée), jamais vers `CONFIRMED` automatiquement.
+- **`app/findings/correlation.py`** : 3 règles Python fixes scopées à un Asset, pas un moteur de règles générique — chaque relation porte une raison lisible par un humain, jamais un lien opaque.
+- **`Finding`** gagne `signature`/`status`/`first_seen`/`last_seen`/`observation_count`/`source_tools`/`observation_job_ids` — le Risk Score (Phase 15) n'est pas réimplémenté, seulement rappelé quand une fusion change `cve_ids`.
+
+Détail complet, formule de signature, et bugs réels trouvés pendant la vérification E2E : [phase-16-correlation-deduplication.md](phase-16-correlation-deduplication.md).
+
 ## Décisions architecturales
 
 - **File de jobs : RQ plutôt que Celery.** Plus léger (pas de broker AMQP séparé), suffisant pour des jobs d'outils CLI séquentiels/parallèles, cohérent avec Redis déjà présent dans la stack.

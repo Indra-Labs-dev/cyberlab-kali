@@ -53,6 +53,34 @@ def test_extract_from_whatweb():
     assert "HTTPServer" in findings[0]["title"]
 
 
+def test_extract_from_whatweb_uses_per_result_url_not_job_target():
+    # Phase 16 regression: the per-result URL must win over the job's
+    # generic target string, otherwise app/findings/signature.py::
+    # extract_port_protocol can never derive a port for whatweb findings,
+    # silently breaking RULE_NMAP_WHATWEB_PORT correlation (see
+    # docs/phase-16-correlation-deduplication.md for the real bug this
+    # caught during E2E verification against DVWA).
+    findings = extract_findings("whatweb", "10.0.0.1", WHATWEB_PARSED)
+    assert findings[0]["target"] == "http://10.0.0.1"
+
+
+def test_extract_from_nuclei_uses_matched_at_not_job_target():
+    parsed = {
+        "findings": [
+            {
+                "template_id": "t",
+                "name": "n",
+                "severity": "high",
+                "matched_at": "https://10.0.0.1:8443/path",
+                "description": "d",
+                "cve_ids": [],
+            }
+        ]
+    }
+    findings = extract_findings("nuclei", "10.0.0.1", parsed)
+    assert findings[0]["target"] == "https://10.0.0.1:8443/path"
+
+
 def test_extract_from_nikto_flags_osvdb_as_medium():
     findings = extract_findings("nikto", "10.0.0.1", NIKTO_PARSED)
     assert len(findings) == 2

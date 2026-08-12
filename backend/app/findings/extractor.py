@@ -56,14 +56,20 @@ def extract_from_nmap(target: str, parsed: dict) -> list[dict]:
 def extract_from_whatweb(target: str, parsed: dict) -> list[dict]:
     findings = []
     for result in parsed.get("results", []):
+        # whatweb can crawl more than one page per job (e.g. "/" and
+        # "/login.php") -- use the per-result resolved URL, not the job's
+        # generic target, so app/findings/signature.py::extract_port_protocol
+        # (Phase 16) can actually derive a port from it. The job-level
+        # `target` is still the fallback for any result missing one.
+        resolved_target = result.get("target", target)
         plugins = result.get("plugins", {})
         for plugin_name, plugin_data in plugins.items():
             findings.append(
                 _finding(
-                    target=target,
+                    target=resolved_target,
                     source_tool="whatweb",
                     title=f"Technology detected: {plugin_name}",
-                    description=f"whatweb identified {plugin_name} on {result.get('target', target)}.",
+                    description=f"whatweb identified {plugin_name} on {resolved_target}.",
                     severity="INFO",
                     evidence={"plugin": plugin_name, "data": plugin_data},
                 )
@@ -123,12 +129,15 @@ def extract_from_nuclei(target: str, parsed: dict) -> list[dict]:
     findings = []
     for item in parsed.get("findings", []):
         severity = _NUCLEI_SEVERITY_MAP.get(item.get("severity"), "INFO")
+        # Prefer the per-match resolved URL (matched_at) over the job's
+        # generic target -- same rationale as extract_from_whatweb above.
+        resolved_target = item.get("matched_at") or target
         findings.append(
             _finding(
-                target=target,
+                target=resolved_target,
                 source_tool="nuclei",
                 title=item.get("name") or item.get("template_id") or "nuclei match",
-                description=item.get("description") or f"nuclei template {item.get('template_id')} matched on {item.get('matched_at') or target}.",
+                description=item.get("description") or f"nuclei template {item.get('template_id')} matched on {resolved_target}.",
                 severity=severity,
                 evidence=item,
                 cve_ids=item.get("cve_ids"),

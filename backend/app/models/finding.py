@@ -2,7 +2,7 @@ import enum
 import uuid
 from datetime import datetime
 
-from sqlalchemy import JSON, Boolean, DateTime, Enum, Float, ForeignKey, Integer, String, Text, text
+from sqlalchemy import JSON, Boolean, DateTime, Enum, Float, ForeignKey, Index, Integer, String, Text, text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -35,8 +35,36 @@ class RiskPriority(str, enum.Enum):
     CRITICAL = "CRITICAL"
 
 
+class FindingStatus(str, enum.Enum):
+    """Phase 16 -- Finding lifecycle. Transitions enforced exclusively by
+    app/findings/lifecycle.py::transition_status -- never assigned directly
+    by an API route or a parser."""
+
+    NEW = "NEW"
+    CONFIRMED = "CONFIRMED"
+    IN_REVIEW = "IN_REVIEW"
+    ACCEPTED_RISK = "ACCEPTED_RISK"
+    FALSE_POSITIVE = "FALSE_POSITIVE"
+    REMEDIATED = "REMEDIATED"
+    REOPENED = "REOPENED"
+
+
 class Finding(Base):
     __tablename__ = "findings"
+    __table_args__ = (
+        # Mirrors alembic/versions/3cbc3564e708_..._finding_.py exactly (same
+        # name, same partial WHERE) -- this is the constraint the whole
+        # concurrent-upsert-safety design in app/findings/service.py relies
+        # on. It must be declared here, not only in the migration: SQLAlchemy
+        # Column-level `unique=True` can't express a partial index, and
+        # without it here, Base.metadata.create_all() (used by
+        # tests/conftest.py to build the test database) silently omits it --
+        # which would let tests/findings/test_concurrency.py create two
+        # Finding rows for the same signature and never notice, since
+        # nothing in a from-scratch test schema would reject the second
+        # INSERT.
+        Index("uq_findings_signature", "signature", unique=True, postgresql_where=text("signature IS NOT NULL")),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     job_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("jobs.id"), nullable=False)
@@ -70,5 +98,29 @@ class Finding(Base):
     risk_score: Mapped[int | None] = mapped_column(Integer, nullable=True)
     risk_priority: Mapped[RiskPriority | None] = mapped_column(Enum(RiskPriority, name="risk_priority"), nullable=True)
     risk_calculated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    # Phase 16 -- deduplication identity. NULL when the originating Job has
+    # no target_id (free-text target, no Asset) -- those findings stay
+    # outside dedup/lifecycle/correlation entirely, same precedent as the
+    # Diff Engine (Phase 14) and Risk Score (Phase 15) both already
+    # skipping target_id-less jobs. See app/findings/signature.py for the
+    # exact algorithm. Enforced unique via a partial index
+    # (WHERE signature IS NOT NULL) in the Phase 16 migration, not here --
+    # SQLAlchemy Column-level uniqueness can't express the partial WHERE.
+    signature: Mapped[str | None] = mapped_column(String(64), nullable=True)
+
+    status: Mapped[FindingStatus] = mapped_column(
+        Enum(FindingStatus, name="finding_status"), nullable=False, default=FindingStatus.NEW
+    )
+
+    # Observation tracking -- one logical Finding can be confirmed by many
+    # Jobs (repeated scans, or several tools). Always initialized at
+    # creation (first_seen == last_seen == created_at), advanced only by
+    # app/findings/service.py::upsert_finding, never by an API route.
+    first_seen: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=text("now()"))
+    last_seen: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=text("now()"))
+    observation_count: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    source_tools: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
+    observation_job_ids: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
 
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=text("now()"))

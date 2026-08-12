@@ -1,5 +1,91 @@
 # Changelog
 
+## Unreleased — Phase 16 — Correlation, Deduplication & Finding Lifecycle
+
+- **Deduplication signature** (`backend/app/findings/signature.py`): pure,
+  deterministic SHA-256 identity — `(asset_id, sorted CVE ids)` when the
+  finding carries a CVE (tool-independent on purpose, so two different
+  tools reporting the same CVE on the same asset merge into one Finding),
+  else `(asset_id, normalized title, port, protocol)`. `source_tool` is
+  never part of the identity key. A finding whose Job has no `target_id`
+  (free-text target, no Asset) gets `signature=NULL` and stays entirely
+  outside dedup/lifecycle/correlation — same precedent as the Diff Engine
+  (Phase 14) and Risk Score (Phase 15).
+- **Race-safe upsert** (`backend/app/findings/service.py::upsert_finding`):
+  `SELECT ... FOR UPDATE` plus a SAVEPOINT-isolated speculative INSERT,
+  retried on a unique-constraint collision — relies on PostgreSQL itself
+  (partial unique index `uq_findings_signature`), not an application-level
+  lock. A known value is never overwritten by an unknown one on merge
+  (`recommendation`/`description`/`cve_ids`); `first_seen` never regresses,
+  `last_seen` always advances, `observation_count` increments,
+  `source_tools`/`observation_job_ids` grow without duplicates or loss.
+  Proven with two real concurrent PostgreSQL sessions racing on the same
+  signature (`tests/findings/test_concurrency.py`) — exactly one Finding,
+  rerun 5 times without failure.
+- **Finding lifecycle** (`backend/app/findings/lifecycle.py`): fixed
+  transition table (`NEW → CONFIRMED → IN_REVIEW → {ACCEPTED_RISK,
+  FALSE_POSITIVE, REMEDIATED}`, with `REOPENED` resuming the review flow),
+  append-only `finding_status_history`. A matching re-observation
+  auto-reopens `REMEDIATED`/`FALSE_POSITIVE` findings — **never**
+  `ACCEPTED_RISK` (a conscious human decision must not be silently
+  overridden) and never auto-`CONFIRMED`. Verified live against the real
+  Docker stack, not just unit tests: full manual lifecycle via the browser
+  UI, `FALSE_POSITIVE` → real re-scan → `REOPENED` with correct history,
+  `ACCEPTED_RISK` → three real re-scans → status unchanged each time.
+- **Correlation, not a rule engine** (`backend/app/findings/correlation.py`):
+  exactly 3 fixed rules (`RULE_NMAP_WHATWEB_PORT`, `RULE_NMAP_NUCLEI_PORT`,
+  `RULE_SHARED_TECHNOLOGY`), scoped to one Asset's findings, each producing
+  a human-readable `reason` — never an opaque link. Idempotent (canonical
+  UUID ordering + unique constraint on `(finding_id, related_finding_id,
+  rule)`), verified by re-running correlation on the same findings twice
+  with zero new relations on the second pass.
+- **Real bug found and fixed during E2E verification**: the whatweb/nuclei
+  extractors (`backend/app/findings/extractor.py`) stored the Job's generic
+  target string on each Finding instead of the per-result resolved URL
+  already present in the parsed output — `extract_port_protocol` could
+  therefore never derive a port for either tool, silently preventing
+  `RULE_NMAP_WHATWEB_PORT`/`RULE_NMAP_NUCLEI_PORT` from ever matching in
+  production. Reproduced against the real DVWA lab (zero relations despite
+  a matching open port), fixed by using the already-available per-result
+  URL, rebuilt/redeployed, re-verified: 10 real relations created.
+- **Two more real bugs found while writing the test suite** (see
+  [docs/phase-16-correlation-deduplication.md](docs/phase-16-correlation-deduplication.md)):
+  `upsert_finding()` crashed for any target-less finding (missing `flush()`
+  before a column default was read); the partial unique index enforcing
+  the whole concurrency-safety design existed only in the Alembic
+  migration, not the SQLAlchemy model — invisible to
+  `Base.metadata.create_all()`, so the test database silently lacked the
+  very constraint `test_concurrency.py` exists to prove. Both fixed and
+  reverified.
+- **New API**: `GET /api/findings` gained `status`/`source_tool` filters;
+  `GET /api/findings/{id}/history` (status change history, most recent
+  first); `GET /api/findings/{id}/relations` (normalized so `finding_id`
+  in the response always matches the requested ID regardless of storage
+  order); `PATCH /api/findings/{id}/status` (`400` on an invalid
+  transition, `404` on an unknown finding, every transition — manual or
+  automatic — recorded to history).
+- **Frontend**: `/findings` and `/findings/[id]` extended, not redesigned —
+  status filter, observation-count/source-tools badges, a Lifecycle panel
+  (first/last seen, observation count, reporting tools, status-transition
+  buttons limited to valid next states, real history), and a Related
+  Findings panel (rule + human-readable reason, links to the linked
+  Finding). The Security Graph visualization stays explicitly Phase 17.
+- **Migration**: additive only — existing findings backfilled with
+  `status=NEW`, `first_seen=last_seen=created_at`, `observation_count=1`,
+  `source_tools=[source_tool]`; no signature or relation fabricated for
+  pre-Phase-16 data since none can be honestly proven from what already
+  exists. Verified real upgrade → downgrade → upgrade against a Postgres
+  backup before touching the dev database.
+- **Full pipeline verified against the real Docker stack**: a real Asset
+  linked to the DVWA lab, scanned with real `nmap`+`whatweb`+`nuclei`,
+  correlation producing genuine relations, repeat scans deduplicating
+  instead of creating rows, the full lifecycle chain exercised through the
+  actual browser UI, and `docker compose restart cyberlab-worker` run
+  mid-sequence with no duplication/loss/corruption afterward. 367 tests
+  green (292 pre-existing + 75 new).
+- See [docs/phase-16-correlation-deduplication.md](docs/phase-16-correlation-deduplication.md)
+  for the full architecture, signature algorithm, and verification log.
+
 ## Unreleased — Phase 15 — Risk Intelligence & Risk Score
 
 - **CVE/CVSS extraction from nuclei** (`backend/app/tools/parsers/nuclei.py`):

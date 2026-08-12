@@ -1,6 +1,7 @@
 from app.models.asset import Asset, AssetCriticality, AssetType, AuthorizationStatus
 from app.models.asset_change_event import AssetChangeEvent, ChangeType
-from app.models.finding import Confidence, Finding, RiskPriority, Severity
+from app.models.finding import Confidence, Finding, FindingStatus, RiskPriority, Severity
+from app.models.finding_relation import FindingRelation, FindingStatusHistory
 from app.models.job import Job, JobStatus
 from app.models.project import Project, ProjectStatus
 from app.models.report import Report, ReportFormat
@@ -15,6 +16,9 @@ __all__ = [
     "Severity",
     "Confidence",
     "RiskPriority",
+    "FindingStatus",
+    "FindingStatusHistory",
+    "FindingRelation",
     "Report",
     "ReportFormat",
     "Project",

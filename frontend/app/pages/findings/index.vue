@@ -1,4 +1,6 @@
 <script setup lang="ts">
+type FindingStatus = "NEW" | "CONFIRMED" | "IN_REVIEW" | "ACCEPTED_RISK" | "FALSE_POSITIVE" | "REMEDIATED" | "REOPENED";
+
 interface Finding {
   id: string;
   job_id: string;
@@ -16,9 +18,25 @@ interface Finding {
   kev: boolean | null;
   risk_score: number | null;
   risk_priority: "INFORMATIONAL" | "LOW" | "MEDIUM" | "HIGH" | "CRITICAL" | null;
+  // Phase 16 -- deduplication/lifecycle.
+  status: FindingStatus;
+  observation_count: number;
+  source_tools: string[];
 }
 
 const PRIORITIES = ["INFORMATIONAL", "LOW", "MEDIUM", "HIGH", "CRITICAL"] as const;
+const STATUSES: FindingStatus[] = ["NEW", "CONFIRMED", "IN_REVIEW", "ACCEPTED_RISK", "FALSE_POSITIVE", "REMEDIATED", "REOPENED"];
+const SOURCE_TOOLS = ["nmap", "masscan", "whatweb", "nuclei", "sslscan", "gobuster", "searchsploit", "nikto"];
+
+const statusColor: Record<FindingStatus, string> = {
+  NEW: "bg-slate-700/50 text-slate-300",
+  CONFIRMED: "bg-sky-500/15 text-sky-400",
+  IN_REVIEW: "bg-amber-500/15 text-amber-400",
+  ACCEPTED_RISK: "bg-purple-500/15 text-purple-400",
+  FALSE_POSITIVE: "bg-slate-700/50 text-slate-500 line-through",
+  REMEDIATED: "bg-emerald-500/15 text-emerald-400",
+  REOPENED: "bg-red-500/15 text-red-400",
+};
 
 const { apiFetch } = useApi();
 
@@ -32,6 +50,8 @@ const severityFilter = ref<string>("");
 const priorityFilter = ref<string>("");
 const kevOnly = ref(false);
 const minRiskScore = ref<string>("");
+const statusFilter = ref<string>("");
+const sourceToolFilter = ref<string>("");
 const sortBy = ref<"created_at_desc" | "risk_score_desc" | "risk_score_asc">("created_at_desc");
 
 const severityColor: Record<string, string> = {
@@ -71,6 +91,8 @@ async function loadFindings() {
     if (priorityFilter.value) params.set("priority", priorityFilter.value);
     if (kevOnly.value) params.set("kev", "true");
     if (minRiskScore.value) params.set("min_risk_score", minRiskScore.value);
+    if (statusFilter.value) params.set("status", statusFilter.value);
+    if (sourceToolFilter.value) params.set("source_tool", sourceToolFilter.value);
     params.set("sort", sortBy.value);
     params.set("limit", "200");
     findings.value = await apiFetch<Finding[]>(`/api/findings?${params.toString()}`);
@@ -81,7 +103,7 @@ async function loadFindings() {
   }
 }
 
-watch([severityFilter, priorityFilter, kevOnly, minRiskScore, sortBy], loadFindings);
+watch([severityFilter, priorityFilter, kevOnly, minRiskScore, statusFilter, sourceToolFilter, sortBy], loadFindings);
 onMounted(() => {
   loadFindings();
   loadTopRisks();
@@ -156,6 +178,18 @@ onMounted(() => {
           class="w-20 rounded-md border border-slate-700 bg-slate-950 px-2 py-1 text-sm text-slate-200"
         />
 
+        <label class="ml-2 text-xs text-slate-500">Status</label>
+        <select v-model="statusFilter" class="rounded-md border border-slate-700 bg-slate-950 px-2 py-1 text-sm text-slate-200">
+          <option value="">All</option>
+          <option v-for="s in STATUSES" :key="s" :value="s">{{ s }}</option>
+        </select>
+
+        <label class="ml-2 text-xs text-slate-500">Source tool</label>
+        <select v-model="sourceToolFilter" class="rounded-md border border-slate-700 bg-slate-950 px-2 py-1 text-sm text-slate-200">
+          <option value="">All</option>
+          <option v-for="t in SOURCE_TOOLS" :key="t" :value="t">{{ t }}</option>
+        </select>
+
         <label class="ml-2 text-xs text-slate-500">Sort</label>
         <select v-model="sortBy" class="rounded-md border border-slate-700 bg-slate-950 px-2 py-1 text-sm text-slate-200">
           <option value="created_at_desc">Newest first</option>
@@ -193,11 +227,16 @@ onMounted(() => {
                 <span v-if="finding.kev === true" class="rounded bg-red-500/15 px-2 py-0.5 text-xs font-medium text-red-400">
                   KEV
                 </span>
+                <span class="rounded px-2 py-0.5 text-xs font-medium" :class="statusColor[finding.status]">
+                  {{ finding.status.replace("_", " ") }}
+                </span>
                 <span class="font-medium text-slate-200">{{ finding.title }}</span>
               </div>
               <p class="mt-1 text-xs text-slate-500">
-                Target: <code class="text-slate-400">{{ finding.target }}</code> · Source: {{ finding.source_tool }} ·
+                Target: <code class="text-slate-400">{{ finding.target }}</code> · Source:
+                {{ finding.source_tools.length > 1 ? finding.source_tools.join(", ") : finding.source_tool }} ·
                 Confidence: {{ finding.confidence }}
+                <span v-if="finding.observation_count > 1"> · Seen {{ finding.observation_count }}× </span>
                 <span v-if="finding.cve_ids.length"> · {{ finding.cve_ids.join(", ") }}</span>
                 <span v-if="finding.cvss_score !== null"> · CVSS {{ finding.cvss_score }}</span>
                 <span v-if="finding.epss_score !== null"> · EPSS {{ formatPercent(finding.epss_score) }}</span>
