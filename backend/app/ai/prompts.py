@@ -124,3 +124,35 @@ Only use job ids from the list you were given — never invent one."""
 def build_report_proposal_prompt(project_name: str, jobs: list[dict]) -> str:
     jobs_desc = json.dumps(jobs, indent=2)
     return f"Project: {project_name}\n\nCompleted jobs:\n{jobs_desc}\n"
+
+
+SUMMARY_SYSTEM = """You are a security assessment assistant inside CyberLab, a local \
+cybersecurity lab tool used only for authorized testing. You are given the current state of a \
+project: its assets, a breakdown of findings by severity, and the most recent detected changes. \
+Write a short plain-text summary (3-6 sentences, no markdown, no JSON, no headings) a security \
+analyst could read in a few seconds to understand where this project stands right now — what's \
+being tracked, what stands out (e.g. concentration of high/critical findings, notable recent \
+changes), and nothing more. Do not invent assets, findings, or changes beyond what is listed. If \
+there is nothing notable, say so plainly rather than padding the summary."""
+
+
+def build_summary_prompt(
+    project_name: str, assets: list[dict], severity_counts: dict[str, int], recent_changes: list[dict]
+) -> str:
+    return (
+        f"Project: {project_name}\n\n"
+        f"Assets ({len(assets)}):\n{json.dumps(assets, indent=2)}\n\n"
+        f"Findings by severity:\n{json.dumps(severity_counts, indent=2)}\n\n"
+        f"Most recent detected changes:\n{json.dumps(recent_changes, indent=2)}\n"
+    )
+
+
+CHAT_MEMORY_CONTEXT_TEMPLATE = """
+
+Project memory context for {project_name} (read-only -- you cannot change this):
+Stored summary (last generated {generated_at}): {summary}
+
+Most recent detected changes:
+{recent_changes}
+If the user asks what changed, or about the project's current state, ground your answer in this \
+data — never invent a change or finding that isn't listed here."""

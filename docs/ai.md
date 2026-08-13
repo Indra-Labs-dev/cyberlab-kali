@@ -14,9 +14,11 @@ parsing.py      — extraction JSON tolérante (fences markdown, texte parasite)
 analyst.py      — AIAnalyst : job de scan -> AnalysisResult
 planner.py      — AIMissionPlanner : (target, goal) -> MissionPlan
 orchestrator.py — MissionOrchestrator (Phase 18) : cycle de vie des Missions
+memory.py       — regenerate_project_summary() (Phase 19) : mémoire IA par projet
 agents/
   correlation.py — CorrelationAgent (Phase 18, lecture seule)
   report.py       — ReportAgent (Phase 18, lecture seule)
+  summary.py      — SummaryAgent (Phase 19, lecture seule)
 ```
 
 Changer de provider (un autre modèle Ollama, ou plus tard un autre backend) ne touche que `ollama.py` — `analyst.py`/`planner.py` ne dépendent que de l'interface `AIProvider`.
@@ -33,7 +35,7 @@ L'utilisateur choisit lui-même quelles étapes lancer (`Run` par étape dans `/
 
 ## AI Assistant (chat)
 
-`POST /api/ai/chat` : question/réponse libre, sans capacité d'exécution — le modèle ne peut que répondre en texte, il n'a accès à aucun outil ni à la base de données depuis cet endpoint.
+`POST /api/ai/chat` : question/réponse libre, sans capacité d'exécution — le modèle ne peut que répondre en texte, il n'a accès à aucun outil ni à la base de données depuis cet endpoint. Depuis la Phase 19, un `project_id` optionnel enrichit le system prompt avec la mémoire IA du projet (voir plus bas) — toujours single-turn, aucun historique de conversation persisté.
 
 ## Missions (Phase 18 — autonomie Niveau 2)
 
@@ -47,7 +49,13 @@ Une Mission (`app/models/mission.py`) est un plan approuvé **une fois**, qui ex
 
 `app/ai/agents/report.py::ReportAgent`, lecture seule, ne génère jamais un rapport lui-même : `POST /api/ai/reports/propose` renvoie un titre + une liste de scans proposés (`ReportProposal`), que l'utilisateur édite avant de cliquer "Generate" — lequel appelle le `POST /api/reports` existant, inchangé par cette phase.
 
+## AI Memory per Project (Phase 19)
+
+`app/ai/memory.py::regenerate_project_summary()` régénère et persiste un résumé texte du projet (`ProjectAISummary`, table dédiée — jamais un `Finding` de type spécial) après l'activité de scan, jamais recalculé à chaque consultation. Déclenché automatiquement par `execute_job()` (hook isolé, même patron que l'avancement de Mission en Phase 18 : session séparée, ne peut jamais affecter `job.status`), avec un cooldown de 5 minutes ; `POST /api/ai/projects/{id}/summary/regenerate` le contourne pour une régénération manuelle. `GET /api/ai/projects/{id}/summary` renvoie `404` tant qu'aucun résumé n'a jamais été généré.
+
+Les questions temporelles ("qu'est-ce qui a changé depuis le dernier audit ?") sont répondues en enrichissant le chat (`ChatRequest.project_id`) du résumé stocké et des derniers `AssetChangeEvent` (Diff Engine, Phase 14) — une couche de présentation en langage naturel sur des données déjà structurées, jamais un nouveau système de stockage ni un nouvel appel IA de résumé à la volée. Voir [phase-19-ai-memory.md](phase-19-ai-memory.md) pour l'architecture complète.
+
 ## Limitations connues
 
-- Pas de mémoire de conversation persistée côté serveur (le contexte du chat vit uniquement dans l'état du frontend) — à revoir avec le modèle `AIConversation`/`AIMessage` (Phase 9+).
+- Pas de mémoire de conversation persistée côté serveur (le contexte du chat vit uniquement dans l'état du frontend) — à revoir avec le modèle `AIConversation`/`AIMessage`, toujours hors de la roadmap numérotée actuelle.
 - Le Mission Planner ne connaît pas encore le contexte Projet/Lab (ces entités n'existent pas encore) ; il ne reçoit que `target` et `goal` en texte libre.

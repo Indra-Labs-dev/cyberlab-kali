@@ -65,6 +65,19 @@ def execute_job(job_id: str, tool_name: str, params: dict, timeout: int | None =
         except Exception:
             logger.exception("mission advancement failed for job %s", job_id)
 
+        # Phase 19: same isolation reasoning as the Mission hook above --
+        # an LLM call is slow/network-bound (10-30s observed with the
+        # local Ollama model), so it never shares the job's own
+        # transaction/session, and a failure here can never affect
+        # job.status either. Separate try/except so a bug in one hook can
+        # never suppress the other.
+        try:
+            from app.ai.memory import regenerate_project_summary_for_job  # local: avoids a tasks<->memory import cycle
+
+            regenerate_project_summary_for_job(job_id)
+        except Exception:
+            logger.exception("project summary regeneration failed for job %s", job_id)
+
 
 def _execute_job(job_id: str, tool_name: str, params: dict, timeout: int | None = None) -> None:
     session = get_sync_session()

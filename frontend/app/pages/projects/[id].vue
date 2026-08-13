@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { SEVERITY_COLORS } from "~/constants/colors";
 import type { Asset } from "~/types/asset";
+import type { ProjectAISummary } from "~/types/project-ai-summary";
 
 interface ProjectSummary {
   id: string;
@@ -48,6 +49,7 @@ interface ReportMeta {
 const route = useRoute();
 const { apiFetch, downloadUrl } = useApi();
 const { listAssets } = useAssets();
+const { getProjectSummary, regenerateProjectSummary } = useProjectMemory();
 const projectId = route.params.id as string;
 
 const project = ref<ProjectSummary | null>(null);
@@ -90,6 +92,77 @@ function address(t: Asset) {
 
 function formatDate(iso: string) {
   return new Date(iso).toLocaleString();
+}
+
+// --- AI Memory (Phase 19) ---
+// Lazy-loaded only when the ai tab is first opened -- the summary is
+// stored, not recalculated on every question, so there's no reason to
+// fetch it on every project page load regardless of which tab is active.
+const summary = ref<ProjectAISummary | null>(null);
+const summaryLoading = ref(false);
+const summaryLoaded = ref(false);
+const regenerating = ref(false);
+const memoryError = ref("");
+
+async function loadSummary() {
+  if (summaryLoaded.value) return;
+  summaryLoading.value = true;
+  memoryError.value = "";
+  try {
+    summary.value = await getProjectSummary(projectId);
+  } catch (err: any) {
+    if (err?.response?.status !== 404) {
+      memoryError.value = err?.data?.detail || "Failed to load the project summary";
+    }
+    // 404 means no summary generated yet -- not an error, just an empty state.
+  } finally {
+    summaryLoading.value = false;
+    summaryLoaded.value = true;
+  }
+}
+
+async function onRegenerateSummary() {
+  regenerating.value = true;
+  memoryError.value = "";
+  try {
+    summary.value = await regenerateProjectSummary(projectId);
+  } catch (err: any) {
+    memoryError.value = err?.data?.detail || "Failed to regenerate the project summary";
+  } finally {
+    regenerating.value = false;
+  }
+}
+
+watch(tab, (value) => {
+  if (value === "ai") loadSummary();
+});
+
+// --- Ask about this project (Phase 19) ---
+// Single-turn, no persisted conversation history -- the AI Memory context
+// (stored summary + recent AssetChangeEvents) is what grounds the answer,
+// not a chat log. See backend/app/api/routes/ai.py::chat's project_id handling.
+const question = ref("");
+const answer = ref("");
+const asking = ref(false);
+const askError = ref("");
+
+async function askAboutProject() {
+  const message = question.value.trim();
+  if (!message || asking.value) return;
+  asking.value = true;
+  askError.value = "";
+  answer.value = "";
+  try {
+    const res = await apiFetch<{ reply: string }>("/api/ai/chat", {
+      method: "POST",
+      body: { message, project_id: projectId },
+    });
+    answer.value = res.reply;
+  } catch (err: any) {
+    askError.value = err?.data?.detail || "Failed to get an answer";
+  } finally {
+    asking.value = false;
+  }
 }
 
 onMounted(async () => {
@@ -214,12 +287,59 @@ onMounted(async () => {
         </div>
       </div>
 
-      <!-- AI -->
-      <div v-else-if="tab === 'ai'" class="px-8 py-6">
-        <p class="text-sm text-slate-600">
-          Ask the AI Assistant about this project's assets and findings from the
-          <NuxtLink to="/ai" class="text-emerald-400 hover:underline">AI Assistant page →</NuxtLink>
-        </p>
+      <!-- AI Memory (Phase 19) -->
+      <div v-else-if="tab === 'ai'" class="grid grid-cols-1 gap-6 px-8 py-6 lg:grid-cols-2">
+        <section class="rounded-lg border border-slate-800 bg-slate-900/40 p-4">
+          <div class="mb-3 flex items-center justify-between">
+            <h2 class="text-sm font-semibold text-slate-300">Project Summary</h2>
+            <button
+              class="rounded-md border border-slate-700 px-2.5 py-1 text-xs text-slate-300 hover:bg-slate-800 disabled:opacity-50"
+              :disabled="regenerating"
+              @click="onRegenerateSummary"
+            >
+              {{ regenerating ? "Regenerating…" : "Regenerate" }}
+            </button>
+          </div>
+          <p class="mb-3 text-xs text-slate-500">
+            Stored after scan activity, not recalculated on every visit — click Regenerate for the latest state.
+          </p>
+
+          <p v-if="memoryError" class="mb-2 text-sm text-red-400">{{ memoryError }}</p>
+          <LoadingState v-if="summaryLoading" />
+          <EmptyState v-else-if="summaryLoaded && !summary" message="No summary generated yet — run a scan, or click Regenerate." />
+          <div v-else-if="summary" class="rounded-md border border-slate-800 bg-slate-950/50 p-3">
+            <p class="whitespace-pre-wrap text-sm text-slate-300">{{ summary.summary }}</p>
+            <p class="mt-2 text-xs text-slate-600">Generated {{ formatDate(summary.generated_at) }}</p>
+          </div>
+        </section>
+
+        <section class="rounded-lg border border-slate-800 bg-slate-900/40 p-4">
+          <h2 class="mb-3 text-sm font-semibold text-slate-300">Ask about this project</h2>
+          <p class="mb-3 text-xs text-slate-500">
+            Grounded in the stored summary and this project's most recent detected changes — e.g. "what changed
+            since the last audit?" For general questions, use the
+            <NuxtLink to="/ai" class="text-emerald-400 hover:underline">AI Assistant page →</NuxtLink>.
+          </p>
+          <form class="flex gap-2" @submit.prevent="askAboutProject">
+            <input
+              v-model="question"
+              type="text"
+              placeholder="What changed since the last audit?"
+              class="flex-1 rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-200 placeholder:text-slate-600"
+            />
+            <button
+              type="submit"
+              class="rounded-md bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-500 disabled:opacity-50"
+              :disabled="asking || !question.trim()"
+            >
+              {{ asking ? "Asking…" : "Ask" }}
+            </button>
+          </form>
+          <p v-if="askError" class="mt-2 text-sm text-red-400">{{ askError }}</p>
+          <p v-if="answer" class="mt-3 whitespace-pre-wrap rounded-md border border-slate-800 bg-slate-950/50 p-3 text-sm text-slate-300">
+            {{ answer }}
+          </p>
+        </section>
       </div>
 
       <!-- Reports -->

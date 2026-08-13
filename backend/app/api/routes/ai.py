@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.ai.agents.correlation import CorrelationAgent
 from app.ai.agents.report import ReportAgent
 from app.ai.analyst import AIAnalyst
+from app.ai.memory import regenerate_project_summary
 from app.ai.ollama import OllamaProvider, OllamaUnavailableError
 from app.ai.orchestrator import (
     InvalidMissionStateError,
@@ -19,18 +20,22 @@ from app.ai.orchestrator import (
     cancel_mission,
 )
 from app.ai.planner import AIMissionPlanner
-from app.ai.prompts import build_tool_catalog_summary
+from app.ai.prompts import CHAT_MEMORY_CONTEXT_TEMPLATE, build_tool_catalog_summary
 from app.ai.schemas import AnalysisResult, ChatResponse, MissionPlan, ReportProposal
 from app.db.session import get_db
 from app.models.ai_correlation_suggestion import AICorrelationSuggestion, SuggestionStatus
+from app.models.asset import Asset
+from app.models.asset_change_event import AssetChangeEvent
 from app.models.finding import Finding
 from app.models.finding_relation import FindingRelation
 from app.models.job import Job, JobStatus
 from app.models.mission import Mission, MissionStep
 from app.models.project import Project
+from app.models.project_ai_summary import ProjectAISummary
 from app.models.target import Target
 from app.schemas.ai_correlation import AICorrelationSuggestionResponse, GenerateCorrelationSuggestionsRequest
 from app.schemas.mission import MissionCreateRequest, MissionResponse, MissionStepResponse
+from app.schemas.project_ai_summary import ProjectAISummaryResponse
 from app.tools import registry
 
 router = APIRouter(prefix="/ai", tags=["ai"])
@@ -123,6 +128,16 @@ class ChatRequest(BaseModel):
     # Optional context so "analyze this target" resolves to a real Target
     # the AI is TOLD about, rather than something it has to invent.
     target_id: uuid.UUID | None = None
+    # Phase 19 -- optional AI Memory context. Never a new conversation-
+    # history store: only the already-stored ProjectAISummary (app/ai/memory.py)
+    # and the Diff Engine's own AssetChangeEvent rows (Phase 14) are read
+    # and folded into this single-turn system prompt -- "the AI memory is
+    # just a natural-language presentation layer over already-structured
+    # data" (docs/roadmap.md), not a new storage system.
+    project_id: uuid.UUID | None = None
+
+
+_RECENT_CHANGES_IN_CHAT_LIMIT = 20
 
 
 @router.post("/chat", response_model=ChatResponse)
@@ -140,6 +155,40 @@ async def chat(
             f"name={target.name!r}, address={target.address!r}, "
             f"authorization_status={target.authorization_status.value}. "
             f"If the user refers to 'this target' or 'the current target', they mean this one."
+        )
+
+    if request.project_id is not None:
+        project = await db.get(Project, request.project_id)
+        if project is None:
+            raise HTTPException(status_code=404, detail="project not found")
+
+        summary_row = await db.execute(
+            select(ProjectAISummary).where(ProjectAISummary.project_id == request.project_id)
+        )
+        summary_row = summary_row.scalar_one_or_none()
+
+        changes_result = await db.execute(
+            select(AssetChangeEvent)
+            .join(Asset, AssetChangeEvent.asset_id == Asset.id)
+            .where(Asset.project_id == request.project_id)
+            .order_by(AssetChangeEvent.detected_at.desc())
+            .limit(_RECENT_CHANGES_IN_CHAT_LIMIT)
+        )
+        changes = list(changes_result.scalars())
+
+        changes_text = (
+            "\n".join(
+                f"- {c.change_type.value} ({c.field}): {c.old_value!r} -> {c.new_value!r}, "
+                f"detected at {c.detected_at.isoformat() if c.detected_at else 'unknown time'}"
+                for c in changes
+            )
+            or "No changes detected yet."
+        )
+        system += CHAT_MEMORY_CONTEXT_TEMPLATE.format(
+            project_name=project.name,
+            generated_at=summary_row.generated_at.isoformat() if summary_row else "never",
+            summary=summary_row.summary if summary_row else "No summary generated yet.",
+            recent_changes=changes_text,
         )
 
     try:
@@ -430,3 +479,43 @@ async def propose_report(
         return await agent.propose(project.name, jobs)
     except OllamaUnavailableError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+
+# --------------------------------------------------------------------------
+# Phase 19 -- AI Memory per Project. GET reads the stored summary (never
+# recalculated on request, see app/ai/memory.py); the manual regenerate
+# route bypasses the automatic cooldown (explicit human intent), the same
+# way it's bypassed by execute_job()'s own post-completion hook only via
+# elapsed time, never by request volume.
+# --------------------------------------------------------------------------
+
+
+@router.get("/projects/{project_id}/summary", response_model=ProjectAISummaryResponse)
+async def get_project_summary(project_id: uuid.UUID, db: AsyncSession = Depends(get_db)) -> ProjectAISummaryResponse:
+    project = await db.get(Project, project_id)
+    if project is None:
+        raise HTTPException(status_code=404, detail="project not found")
+
+    summary = (
+        await db.execute(select(ProjectAISummary).where(ProjectAISummary.project_id == project_id))
+    ).scalar_one_or_none()
+    if summary is None:
+        raise HTTPException(status_code=404, detail="no summary generated yet for this project")
+    return ProjectAISummaryResponse.model_validate(summary)
+
+
+@router.post("/projects/{project_id}/summary/regenerate", response_model=ProjectAISummaryResponse)
+async def regenerate_project_summary_route(
+    project_id: uuid.UUID, db: AsyncSession = Depends(get_db), provider: OllamaProvider = Depends(get_provider)
+) -> ProjectAISummaryResponse:
+    project = await db.get(Project, project_id)
+    if project is None:
+        raise HTTPException(status_code=404, detail="project not found")
+
+    # Sync, DB-writing function -- asyncio.to_thread is the same bridge
+    # idiom already used for approve_mission()/cancel_mission() (Phase 18)
+    # and recalculate_findings_for_asset_sync (Phase 15).
+    row = await asyncio.to_thread(regenerate_project_summary, project_id, provider, force=True)
+    if row is None:
+        raise HTTPException(status_code=404, detail="project not found")
+    return ProjectAISummaryResponse.model_validate(row)

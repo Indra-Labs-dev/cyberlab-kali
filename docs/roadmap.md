@@ -242,6 +242,8 @@ Orchestrateur (nouveau, mais mince)
 
 **Complexité** : S/M.
 
+**Résultat réel** : livré. Table dédiée `project_ai_summaries` (pas un `Finding` de type `SUMMARY` — `Finding` n'a aucune colonne discriminante, ajouter cette table suit le précédent de chaque phase précédente). Régénération automatique via un hook isolé sur `execute_job()` (même patron que l'avancement de Mission, Phase 18 — jamais dans la même transaction que Diff Engine/Correlation/Graph, un appel IA est trop lent pour ça), avec un cooldown de 5 minutes approximant "après chaque batch de scans" sans nouvelle infrastructure de batch ; régénération manuelle disponible pour la contourner. Questions temporelles répondues en enrichissant `POST /api/ai/chat` (nouveau `project_id`) du résumé stocké + des derniers `AssetChangeEvent`, jamais un nouveau stockage de conversation. Voir [phase-19-ai-memory.md](phase-19-ai-memory.md) pour l'architecture complète, l'audit de sécurité, et la vérification en conditions réelles (Docker + navigateur + Ollama réel, résumé et réponses grounded vérifiés factuellement exacts).
+
 ---
 
 ## 7. Track C — Workflow & Reporting

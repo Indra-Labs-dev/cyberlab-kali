@@ -1,5 +1,79 @@
 # Changelog
 
+## Unreleased — Phase 19 — Mémoire IA par Projet/Asset
+
+Résumé de projet stocké (régénéré après l'activité de scan, jamais
+recalculé à chaque consultation) et questions temporelles répondues en
+enrichissant le chat existant des données déjà structurées du Diff Engine
+(Phase 14) — jamais un nouveau système de stockage. Voir
+[docs/phase-19-ai-memory.md](docs/phase-19-ai-memory.md) pour
+l'architecture complète.
+
+- **Table dédiée `project_ai_summaries`, pas un `Finding` de type
+  `SUMMARY`** : la roadmap laissait les deux options ouvertes ; `Finding`
+  n'a aucune colonne discriminante et son schéma entier est structuré
+  autour d'une vulnérabilité (severity/CVE/risk score/lifecycle) — une
+  table dédiée (`backend/app/models/project_ai_summary.py`, migration
+  `a1c4e6f9b3d2`) suit le précédent de chaque phase précédente (`Mission`,
+  `GraphEdge`, `VulnerabilityIntel`).
+- **`SummaryAgent`** (`backend/app/ai/agents/summary.py`, lecture seule --
+  aucun accès `Session`) : écrit un résumé texte libre à partir des
+  Assets/répartition de sévérité/derniers `AssetChangeEvent` déjà chargés
+  -- jamais de requête DB, jamais d'écriture, comme le Correlation/Report
+  Agent (Phase 18).
+- **Régénération isolée** (`backend/app/ai/memory.py`,
+  `regenerate_project_summary()`/`regenerate_project_summary_for_job()`,
+  sync, module-level) : hook dans le `finally` le plus externe
+  d'`execute_job()` -- même patron d'isolation que l'avancement de
+  Mission (Phase 18), jamais dans la même transaction que Diff
+  Engine/Correlation/Graph (un appel IA est trop lent/réseau pour
+  partager leur commit). Cooldown de 5 minutes (`_REGEN_COOLDOWN`)
+  approxime "après chaque batch de scans" sans nouvelle infrastructure de
+  batch ; la régénération manuelle le contourne.
+- **Chat enrichi** : `ChatRequest.project_id` (nouveau, optionnel) injecte
+  le résumé stocké + les 20 derniers `AssetChangeEvent` du projet dans le
+  system prompt -- le chat reste strictement single-turn, aucun historique
+  de conversation persisté (`AIConversation`/`AIMessage` reste hors de la
+  définition officielle de cette phase).
+- **API** : `GET /api/ai/projects/{id}/summary` (`404` tant qu'aucun
+  résumé n'a jamais été généré), `POST
+  /api/ai/projects/{id}/summary/regenerate` (contourne le cooldown).
+- **Frontend** : remplace le stub de l'onglet `ai` sur
+  `pages/projects/[id].vue` par une carte résumé (horodatage, bouton
+  Regenerate, état vide) et une mini Q&A à un seul tour ("Ask about this
+  project"), grounded sur le résumé + les changements récents. Chargement
+  paresseux -- le résumé n'est récupéré qu'à la première ouverture de
+  l'onglet.
+- **Bug réel trouvé et corrigé pendant la vérification** : un simple
+  `asyncio.run()` pour ponter l'appel IA async depuis le hook sync échoue
+  silencieusement (absorbé par le `except Exception` d'`execute_job()`) si
+  une boucle asyncio est déjà active dans le thread appelant -- n'affecte
+  jamais la production réelle (le worker RQ n'a pas de boucle active),
+  mais affectait silencieusement plusieurs tests préexistants
+  (`tests/assets/test_activity.py`, entre autres) qui appellent
+  `execute_job()` depuis une fonction de test `async def`. Corrigé par
+  `_run_coro()` (bascule vers un thread avec sa propre boucle si
+  nécessaire), prouvé par un test dédié appelé depuis une vraie boucle
+  asyncio active, et confirmé par la disparition des `RuntimeWarning:
+  coroutine ... was never awaited` sur la suite complète.
+- **Migration** : additive uniquement (une nouvelle table). Vrai backup
+  pris avant tout changement ; upgrade → vérifié → downgrade → vérifié →
+  upgrade, exécuté contre la vraie base de dev.
+- **Full pipeline vérifié contre le vrai stack Docker** : conteneurs
+  `cyberlab-api`/`cyberlab-worker`/`cyberlab-frontend` reconstruits et
+  redémarrés. Sur un projet réel (21 findings informationnels réels,
+  changements réels de Phase 16) : `GET /summary` → `404` correctement
+  affiché comme état vide → `Regenerate` → appel réel à Ollama
+  (`qwen2.5-coder:3b`) → résumé **factuellement exact** (criticité,
+  décompte de findings, changements récents tous corrects, rien
+  d'inventé) → "Ask about this project" → réponse **grounded** citant
+  exactement le dernier `AssetChangeEvent` réel (type, champ, horodatage)
+  → logs API propres sur toute la séquence, aucune erreur 500. 28
+  nouveaux tests backend (492 au total), 2 nouveaux tests frontend (95 au
+  total).
+- See [docs/phase-19-ai-memory.md](docs/phase-19-ai-memory.md) for the
+  full architecture, audit, and verification log.
+
 ## Unreleased — Phase 18 — Agents spécialisés (IA)
 
 Autonomie **Niveau 2 — Execute Approved Tasks** : un humain approuve un

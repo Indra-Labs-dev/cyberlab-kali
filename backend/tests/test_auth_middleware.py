@@ -119,6 +119,8 @@ def test_websocket_rejects_missing_token_when_auth_enabled(monkeypatch):
         "/api/ai/correlation-suggestions/00000000-0000-0000-0000-000000000000/accept",
         "/api/ai/correlation-suggestions/00000000-0000-0000-0000-000000000000/dismiss",
         "/api/ai/reports/propose",
+        "/api/ai/projects/00000000-0000-0000-0000-000000000000/summary",
+        "/api/ai/projects/00000000-0000-0000-0000-000000000000/summary/regenerate",
     ],
 )
 async def test_every_api_route_is_guarded_when_auth_enabled(monkeypatch, path):
