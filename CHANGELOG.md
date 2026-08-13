@@ -1,5 +1,63 @@
 # Changelog
 
+## Unreleased — Phase 20 — Evidence & Chain of Custody
+
+Hash SHA-256 du `stdout` de chaque `Job` (preuve d'intégrité minimale, pas
+de vault cryptographique) et Evidence Timeline par Asset/Project (fusion
+chronologique de `Job`/`Finding` déjà existants, pas une nouvelle table).
+Voir [docs/phase-20-evidence-chain-of-custody.md](docs/phase-20-evidence-chain-of-custody.md)
+pour l'architecture complète.
+
+- **`Job.evidence_sha256`** (`String(64)`, nullable — même forme que
+  `Finding.signature`, migration `b2d5f8a1c6e3`) : calculé **inline** dans
+  `app/jobs/tasks.py::_execute_job`, dans la même transaction que
+  `exit_code`/`result` — pas un hook isolé comme l'avancement de Mission
+  ou la régénération de mémoire (Phase 18/19), qui sont isolés *parce que*
+  ce sont des appels réseau/LLM lents ; un SHA-256 local est instantané.
+- Calculé pour **tout** job ayant produit un `stdout`, y compris les jobs
+  `FAILED` par code de sortie non nul (pas seulement les `SUCCESS`) — un
+  `stdout` vide obtient un hash bien défini, jamais confondu avec `NULL`.
+  `NULL` seulement quand l'outil n'a jamais tourné (les deux chemins
+  d'exception existants ne posent jamais `job.stdout`).
+- **`JobResponse.evidence_sha256`** — un seul champ de schéma ajouté,
+  aucune nouvelle route : déjà exposé automatiquement sur `GET
+  /api/jobs`, `GET /api/jobs/{id}`.
+- **`EvidenceTimeline.vue`** (nouveau composant partagé, frontend) : fusion
+  purement présentationnelle de `jobs`+`findings` déjà chargés par la page
+  parente (aucun appel réseau propre), triée chronologiquement (Job :
+  `finished_at ?? created_at` ; Finding : `first_seen`). Utilisé comme
+  nouvelle section sur `pages/assets/[id].vue` et nouvel onglet `timeline`
+  sur `pages/projects/[id].vue` — jamais fusionné avec
+  `AssetChangeTimeline.vue` (Phase 14, hors périmètre littéral de cette
+  phase, composant déjà livré non retouché).
+- **Hash affiché** sur `pages/scans/[id].vue`, à côté du `stdout`, avec
+  copie en un clic.
+- **Bug préexistant trouvé et corrigé** (sans rapport avec cette phase) :
+  `JobStatusBadge.vue` utilisait `computed()` sans l'importer
+  explicitement — fonctionnait dans l'app Nuxt réelle (auto-import), mais
+  plantait dans tout test Vitest simple le montant pour la première fois
+  (découvert en testant `EvidenceTimeline.vue`, qui l'utilise). Corrigé,
+  même classe de correction déjà appliquée aux badges de la Phase 18.
+- **Migration** : additive uniquement (une colonne). Vrai backup pris
+  avant tout changement ; upgrade → vérifié → downgrade → vérifié →
+  upgrade, exécuté contre la vraie base de dev.
+- **Full pipeline vérifié contre le vrai stack Docker** : conteneurs
+  reconstruits et redémarrés. Scan `whatweb` réel lancé depuis l'UI contre
+  l'Asset DVWA réel → hash affiché sur la page Scan → **recalculé
+  indépendamment côté PostgreSQL** (`encode(sha256(stdout::bytea),
+  'hex')`) → correspondance exacte, preuve cryptographique que le hash
+  stocké est correct. Evidence Timeline vérifiée sur les deux pages
+  (Asset et Project), correctement entrelacée par ordre chronologique.
+  Un job antérieur à cette phase confirmé sans hash (comportement
+  attendu, pas de recalcul rétroactif). Logs worker : une régénération de
+  résumé IA (Phase 19) a échoué en conditions réelles pendant ce test
+  (Ollama momentanément injoignable) sans jamais faire échouer le Job
+  lui-même — confirmation en production, pas seulement en test, que
+  l'isolation Phase 19 fonctionne. 11 nouveaux tests backend (497 au
+  total), 6 nouveaux tests frontend (101 au total).
+- See [docs/phase-20-evidence-chain-of-custody.md](docs/phase-20-evidence-chain-of-custody.md)
+  for the full architecture, audit, and verification log.
+
 ## Unreleased — Phase 19 — Mémoire IA par Projet/Asset
 
 Résumé de projet stocké (régénéré après l'activité de scan, jamais

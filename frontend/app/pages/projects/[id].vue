@@ -22,6 +22,8 @@ interface Job {
   target: string;
   status: string;
   created_at: string;
+  finished_at: string | null;
+  evidence_sha256: string | null;
 }
 
 interface Finding {
@@ -30,6 +32,7 @@ interface Finding {
   title: string;
   severity: string;
   source_tool: string;
+  first_seen: string;
 }
 
 interface LabInstance {
@@ -59,7 +62,9 @@ const findings = ref<Finding[]>([]);
 const labs = ref<LabInstance[]>([]);
 const reports = ref<ReportMeta[]>([]);
 const loading = ref(true);
-const tab = ref<"overview" | "assets" | "scans" | "findings" | "labs" | "ai" | "reports" | "graph">("overview");
+const tab = ref<"overview" | "assets" | "scans" | "findings" | "timeline" | "labs" | "ai" | "reports" | "graph">(
+  "overview",
+);
 
 async function loadAll() {
   loading.value = true;
@@ -180,7 +185,7 @@ onMounted(async () => {
     <div v-else-if="project">
       <div class="flex gap-1 border-b border-slate-800 px-8">
         <button
-          v-for="t in ['overview', 'assets', 'scans', 'findings', 'labs', 'ai', 'reports', 'graph']"
+          v-for="t in ['overview', 'assets', 'scans', 'findings', 'timeline', 'labs', 'ai', 'reports', 'graph']"
           :key="t"
           class="border-b-2 px-3 py-2 text-sm capitalize transition-colors"
           :class="tab === t ? 'border-emerald-500 text-emerald-400' : 'border-transparent text-slate-500 hover:text-slate-300'"
@@ -270,6 +275,11 @@ onMounted(async () => {
             <span class="ml-auto text-xs text-slate-600">{{ f.source_tool }}</span>
           </NuxtLink>
         </div>
+      </div>
+
+      <!-- Evidence Timeline (Phase 20) -->
+      <div v-else-if="tab === 'timeline'" class="px-8 py-6">
+        <EvidenceTimeline :jobs="jobs" :findings="findings" />
       </div>
 
       <!-- Labs -->

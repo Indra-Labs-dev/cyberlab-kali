@@ -49,3 +49,4 @@ class JobResponse(BaseModel):
     result: dict | None
     error: str | None
     ai_analysis: dict | None
+    evidence_sha256: str | None

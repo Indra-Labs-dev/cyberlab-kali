@@ -31,8 +31,11 @@ interface ToolDef {
 interface Job {
   id: string;
   tool: string;
+  target: string;
   status: string;
   created_at: string;
+  finished_at: string | null;
+  evidence_sha256: string | null;
 }
 
 const route = useRoute();
@@ -270,6 +273,8 @@ onMounted(loadAll);
       </div>
 
       <AssetFindingsList :findings="findings" />
+
+      <EvidenceTimeline :jobs="jobs" :findings="findings" />
     </div>
   </div>
 </template>

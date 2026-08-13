@@ -28,6 +28,7 @@ interface Job {
   result: unknown;
   error: string | null;
   ai_analysis: AnalysisResult | null;
+  evidence_sha256: string | null;
 }
 
 const route = useRoute();
@@ -39,6 +40,14 @@ const loading = ref(true);
 const cancelling = ref(false);
 const analyzing = ref(false);
 const analyzeError = ref("");
+const hashCopied = ref(false);
+
+async function copyHash() {
+  if (!job.value?.evidence_sha256) return;
+  await navigator.clipboard.writeText(job.value.evidence_sha256);
+  hashCopied.value = true;
+  setTimeout(() => (hashCopied.value = false), 2000);
+}
 
 async function analyzeWithAI() {
   analyzing.value = true;
@@ -180,7 +189,17 @@ onMounted(loadJob);
       </div>
 
       <div v-if="job.stdout" class="rounded-lg border border-slate-800 bg-slate-900/40 p-4">
-        <h2 class="mb-2 text-sm font-semibold text-slate-300">stdout</h2>
+        <div class="mb-2 flex items-center justify-between">
+          <h2 class="text-sm font-semibold text-slate-300">stdout</h2>
+          <button
+            v-if="job.evidence_sha256"
+            class="rounded-md border border-slate-700 px-2 py-1 text-xs text-slate-400 hover:bg-slate-800"
+            :title="job.evidence_sha256"
+            @click="copyHash"
+          >
+            {{ hashCopied ? "Copied" : "sha256:" + job.evidence_sha256.slice(0, 12) + "…" }}
+          </button>
+        </div>
         <pre class="max-h-96 overflow-auto whitespace-pre-wrap break-words text-xs text-slate-500">{{ job.stdout }}</pre>
       </div>
 

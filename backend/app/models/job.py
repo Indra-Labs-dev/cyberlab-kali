@@ -56,3 +56,11 @@ class Job(Base):
     result: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
     ai_analysis: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    # Phase 20 -- SHA-256 hex digest of `stdout` exactly as received from
+    # the Kali agent, computed once at the same point `stdout` itself is
+    # set (app/jobs/tasks.py::_execute_job) -- minimal integrity proof, not
+    # a cryptographic vault. Same column shape as Finding.signature
+    # (String(64), a hex digest). NULL whenever `stdout` itself is NULL --
+    # a job that never actually ran (rejected before the Kali agent call)
+    # has no output to prove the integrity of.
+    evidence_sha256: Mapped[str | None] = mapped_column(String(64), nullable=True)

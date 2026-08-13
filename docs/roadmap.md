@@ -257,6 +257,8 @@ Bonne idée du brouillon (section 12), déjà à moitié construite : chaque `Jo
 
 **Complexité** : S.
 
+**Résultat réel** : livré. Hash calculé inline dans la même transaction qu'`_execute_job()` (pas un hook isolé comme Mission/Mémoire, Phase 18/19 — un SHA-256 local est instantané, contrairement à un appel IA) pour tout job ayant produit un `stdout`, y compris les jobs `FAILED` par code de sortie non nul ; `NULL` uniquement quand l'outil n'a jamais tourné. Timeline livrée comme composant frontend partagé (`EvidenceTimeline.vue`, fusion Job+Finding triée chronologiquement, aucun appel réseau propre) sur la page Asset et un nouvel onglet Project — jamais fusionnée avec `AssetChangeTimeline.vue` (Phase 14, hors périmètre littéral de cette phase). Aucune nouvelle table, aucune nouvelle route API. Voir [phase-20-evidence-chain-of-custody.md](phase-20-evidence-chain-of-custody.md) pour l'architecture complète, l'audit de sécurité, et la vérification en conditions réelles (hash recalculé indépendamment via PostgreSQL, correspondance exacte).
+
 ### Phase 21 — Tool Orchestrator (chaînage de jobs)
 
 Reprendre l'idée (section 15 du brouillon) mais en restant dans les limites du Policy Engine existant :

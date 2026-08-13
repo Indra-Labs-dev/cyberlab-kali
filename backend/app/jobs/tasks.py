@@ -1,3 +1,4 @@
+import hashlib
 import logging
 from datetime import datetime, timezone
 
@@ -110,6 +111,18 @@ def _execute_job(job_id: str, tool_name: str, params: dict, timeout: int | None 
             job.stderr = raw.get("stderr")
             job.exit_code = raw.get("exit_code")
             job.result = parsed
+            # Phase 20 -- minimal integrity proof, computed inline (not an
+            # isolated post-completion hook like Mission/Memory, Phase
+            # 18/19): unlike those, this is a local, synchronous, no-network
+            # computation over data already in memory, so it belongs in the
+            # same transaction as the rest of this block, not split out.
+            # Never None when stdout itself isn't -- computed unconditionally
+            # here regardless of exit code, so both SUCCESS and
+            # FAILED-by-exit-code jobs get one; only the two exception
+            # handlers below (tool never actually ran) leave it NULL, since
+            # there is no stdout to prove the integrity of.
+            if job.stdout is not None:
+                job.evidence_sha256 = hashlib.sha256(job.stdout.encode("utf-8")).hexdigest()
             job.status = JobStatus.SUCCESS if raw.get("exit_code") == 0 else JobStatus.FAILED
             job.finished_at = _now()
 
