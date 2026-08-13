@@ -127,19 +127,22 @@ async def test_ai_chat_cannot_change_target_authorization_status(client):
 
 
 def test_ai_module_has_no_subprocess_or_docker_access():
-    """Static check: the AI package must never import subprocess/os.system/
-    docker -- if someone adds one later, this test catches it immediately.
+    """Static check: the AI package (including app/ai/agents/ and
+    orchestrator.py, added in Phase 18 -- hence the recursive glob, the
+    original check only covered the top-level files) must never import
+    subprocess/os.system/docker -- if someone adds one later, this test
+    catches it immediately.
     """
     import pathlib
 
     ai_dir = pathlib.Path(__file__).resolve().parents[2] / "app" / "ai"
     forbidden = ("subprocess", "os.system", "os.popen", "docker")
     offenders = []
-    for path in ai_dir.glob("*.py"):
+    for path in ai_dir.rglob("*.py"):
         content = path.read_text()
         for token in forbidden:
             if token in content:
-                offenders.append(f"{path.name}: {token}")
+                offenders.append(f"{path.relative_to(ai_dir)}: {token}")
     assert offenders == []
 
 
@@ -215,14 +218,38 @@ async def test_ai_planner_never_sends_non_ai_allowed_tools_to_the_model():
 
 
 def test_ai_module_has_no_write_access_to_target_model():
-    """Static check: nothing under app/ai/ should ever assign to
+    """Static check: nothing under app/ai/ (recursively, including Phase
+    18's app/ai/agents/ and orchestrator.py) should ever assign to
     Target.authorization_status or otherwise mutate a Target -- that must
-    stay reachable only via PATCH /api/targets, a human-driven action.
+    stay reachable only via PATCH /api/targets/PATCH /api/assets, a
+    human-driven action. orchestrator.py legitimately *reads*
+    asset.authorization_status.value (is_executable() re-validation) --
+    that's a read, not the assignment this check forbids.
     """
     import pathlib
 
     ai_dir = pathlib.Path(__file__).resolve().parents[2] / "app" / "ai"
-    for path in ai_dir.glob("*.py"):
+    for path in ai_dir.rglob("*.py"):
         content = path.read_text()
-        assert "authorization_status =" not in content, f"{path.name} must never assign authorization_status"
-        assert "from app.models.target import" not in content, f"{path.name} must not import the Target model"
+        rel = path.relative_to(ai_dir)
+        assert "authorization_status =" not in content, f"{rel} must never assign authorization_status"
+        assert "from app.models.target import" not in content, f"{rel} must not import the Target model"
+
+
+def test_correlation_and_report_agents_have_no_db_session_access():
+    """Static check: CorrelationAgent and ReportAgent (Phase 18.8/18.9) must
+    stay read-only by construction -- neither file may import a SQLAlchemy
+    Session/AsyncSession, so there is no code path inside either agent that
+    could write a FindingRelation, a Report, or anything else. Persistence
+    (AICorrelationSuggestion, then only-on-accept FindingRelation; nothing
+    for reports beyond the ReportProposal itself) happens exclusively in
+    app/api/routes/ai.py.
+    """
+    import pathlib
+
+    agents_dir = pathlib.Path(__file__).resolve().parents[2] / "app" / "ai" / "agents"
+    for path in agents_dir.glob("*.py"):
+        content = path.read_text()
+        assert "import Session" not in content and "import AsyncSession" not in content, (
+            f"{path.name} must not import a DB Session -- it must stay read-only"
+        )

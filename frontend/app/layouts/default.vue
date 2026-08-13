@@ -29,6 +29,7 @@ const secondaryNav: NavItem[] = [
   { to: "/terminal", label: "Terminal", icon: "⌥" },
   { to: "/labs", label: "Labs", icon: "⬢" },
   { to: "/ai", label: "AI Assistant", icon: "✦" },
+  { to: "/ai/missions", label: "AI Missions", icon: "▶" },
   { to: "/reports", label: "Reports", icon: "≡" },
   { to: "/settings", label: "Settings", icon: "⚙" },
 ];

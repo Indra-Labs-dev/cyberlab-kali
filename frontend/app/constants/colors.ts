@@ -14,6 +14,7 @@
 // FINDING_STATUS_COLORS below).
 import type { AssetCriticality, AuthorizationStatus } from "~/types/asset";
 import type { FindingStatus, RiskPriority, Severity } from "~/types/finding";
+import type { MissionStatus, MissionStepStatus } from "~/types/mission";
 
 export const SEVERITY_COLORS: Record<Severity, string> = {
   INFO: "bg-slate-700/50 text-slate-300",
@@ -79,4 +80,26 @@ export const TOOL_RISK_LEVEL_COLORS: Record<ToolRiskLevel, string> = {
   CAUTION: "bg-amber-500/15 text-amber-400",
   RESTRICTED: "bg-orange-500/15 text-orange-400",
   MANUAL_ONLY: "bg-red-500/15 text-red-400",
+};
+
+// Phase 18 -- Mission lifecycle. Distinct from JobStatus's own inline
+// color map (app/components/JobStatusBadge.vue): a Mission is a multi-step
+// plan, not a single tool run, and has states (DRAFT, APPROVED) a Job
+// never has.
+export const MISSION_STATUS_COLORS: Record<MissionStatus, string> = {
+  DRAFT: "bg-slate-700/50 text-slate-300",
+  APPROVED: "bg-sky-500/15 text-sky-400",
+  RUNNING: "bg-amber-500/15 text-amber-400",
+  COMPLETED: "bg-emerald-500/15 text-emerald-400",
+  FAILED: "bg-red-500/15 text-red-400",
+  CANCELLED: "bg-slate-700/50 text-slate-500",
+};
+
+export const MISSION_STEP_STATUS_COLORS: Record<MissionStepStatus, string> = {
+  PENDING: "bg-slate-700/50 text-slate-300",
+  SKIPPED: "bg-slate-700/50 text-slate-500",
+  QUEUED: "bg-amber-500/15 text-amber-400",
+  SUCCESS: "bg-emerald-500/15 text-emerald-400",
+  FAILED: "bg-red-500/15 text-red-400",
+  CANCELLED: "bg-slate-700/50 text-slate-500",
 };

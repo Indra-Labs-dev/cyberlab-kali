@@ -1,5 +1,109 @@
 # Changelog
 
+## Unreleased — Phase 18 — Agents spécialisés (IA)
+
+Autonomie **Niveau 2 — Execute Approved Tasks** : un humain approuve un
+plan entier en une fois, puis chaque étape s'exécute automatiquement,
+re-validée individuellement par le Policy Engine avant de partir — jamais
+un chemin d'exécution parallèle à `POST /api/jobs`. Niveau 3 non livré
+comme autonomie complète (pas d'enchaînement conditionnel entre étapes),
+mais ses fondations le sont. Niveau 4 hors scope. Voir
+[docs/phase-18-ai-agents.md](docs/phase-18-ai-agents.md) pour
+l'architecture complète.
+
+- **Pas de `create_job()` unifié, pas de quatrième mécanisme de création
+  de Job** : l'inspection du code réel a montré que le clivage async
+  (routes FastAPI)/sync (worker RQ, ticker Phase 14) est déjà une
+  décision architecturale assumée (`backend/app/jobs/service.py`).
+  `MissionOrchestrator` (`backend/app/ai/orchestrator.py`) devient un
+  **troisième** appelant indépendant de `is_executable()` +
+  `prepare_job()`, suivant exactement le patron déjà établi par
+  `app/scheduling/ticker.py::process_schedule` — `app/jobs/service.py` et
+  `app/api/routes/jobs.py` ne sont pas modifiés par cette phase.
+- **`Mission`/`MissionStep`** (nouvelles tables, migration
+  `f8721b028a2d`) : `create_mission()` (async, réutilise
+  `AIMissionPlanner` sans modification) crée un plan `DRAFT` qui ne
+  démarre jamais tout seul ; `approve_mission()`/`advance_mission()`/
+  `cancel_mission()` (sync, fonctions module-level — pas des méthodes,
+  elles n'ont besoin d'aucun provider IA) créent un vrai `Job` par étape,
+  revérifient `is_executable()` avant **chaque** étape (jamais seulement
+  à l'approbation), et arrêtent la Mission au premier échec (stop-on-
+  failure, pas de retry dans cette phase).
+- **Verrouillage anti-concurrence réel** : `SELECT ... FOR UPDATE`
+  bloquant (pas `SKIP LOCKED`, contrairement au ticker Phase 14 qui
+  verrouille un lot de lignes indépendantes/skippables) — un second appel
+  concurrent attend, relit l'état déjà à jour, devient un no-op. Prouvé
+  avec deux vrais threads/deux vraies sessions PostgreSQL, l'un maintenu
+  dans sa transaction pendant que l'autre est vérifié explicitement
+  bloqué sur le verrou : exactement un `Job` créé.
+- **Isolation Job/Mission dans `execute_job()`** : le hook
+  `advance_mission_for_job()` s'exécute dans le `finally` le plus externe
+  — après la fermeture de la session du Job et le commit de son statut
+  terminal, dans sa propre session isolée, dont les erreurs sont
+  journalisées et avalées sans jamais pouvoir réécrire `job.status`.
+  Vérifié en forçant une exception dans le hook : le Job reste `SUCCESS`.
+- **Correlation Agent** (`backend/app/ai/agents/correlation.py`, lecture
+  seule — aucun accès `Session`) : propose des liens entre `Finding` que
+  les 3 règles déterministes de la Phase 16 ne couvrent pas. Persistées
+  dans une table dédiée (`AICorrelationSuggestion`, `status: PENDING`)
+  — jamais directement dans `FindingRelation`, qui reste exclusivement
+  écrite par le moteur déterministe. Une suggestion ne devient une
+  relation réelle que sur acceptation humaine explicite (`rule:
+  RULE_AI_ACCEPTED`, toujours traçable comme d'origine IA), idempotent.
+- **Report Agent** (`backend/app/ai/agents/report.py`, lecture seule) :
+  ne connaît ni `build_report_data()`, ni `render()`, ni le modèle
+  `Report`. Propose un titre + une liste de scans (`ReportProposal`) ;
+  la génération réelle reste exclusivement `POST /api/reports`, **le même
+  endpoint inchangé** que la création manuelle.
+- **API** : `POST/GET /api/ai/missions`, `GET /api/ai/missions/{id}`,
+  `POST /api/ai/missions/{id}/{approve,cancel}`, `POST/GET
+  /api/ai/correlation-suggestions`, `POST
+  /api/ai/correlation-suggestions/{id}/{accept,dismiss}`, `POST
+  /api/ai/reports/propose` — `/plan`, `/analyze/{job_id}`, `/chat`
+  inchangées.
+- **Frontend** : nouvelle page `/ai/missions` (distincte du Mission
+  Planner existant sur `/ai`, qui reste inchangé) — création/liste de
+  Missions avec les 6 statuts (`MissionStatusBadge`), étapes
+  (`MissionStepStatusBadge`), Approve/Cancel, polling borné pendant
+  `RUNNING` ; Correlation Suggestions avec étiquette **"Suggestion IA"**
+  visuellement distincte des relations déterministes, Accept/Reject ;
+  Report Proposal avec titre/liste de scans éditables avant `Generate`.
+- **Sécurité** : garde-fous statiques existants
+  (`test_ai_module_has_no_write_access_to_target_model`,
+  `test_ai_module_has_no_subprocess_or_docker_access`) étendus en
+  `rglob` récursif pour couvrir `orchestrator.py`/`agents/*.py`, ajoutés
+  par cette phase ; nouveau garde-fou statique confirmant qu'aucun agent
+  n'a d'accès `Session`. 9 nouvelles routes ajoutées à
+  `test_every_api_route_is_guarded_when_auth_enabled`. Détail complet
+  dans docs/security.md.
+- **Bug réel trouvé et corrigé pendant la vérification** : le premier jet
+  d'`advance_mission()` marquait une étape sans outil valide (halluciné
+  ou rejeté par `prepare_job()`) comme `FAILED` — violant la contrainte
+  DB `ck_mission_step_job_id_required_when_executed`, qui exige un
+  `job_id` pour ce statut puisqu'aucun `Job` n'a jamais existé pour cette
+  étape. Corrigé avec `SKIPPED` (la sémantique correcte). Trouvé par un
+  test échouant avec une vraie `IntegrityError` PostgreSQL au premier
+  lancement, pas en relecture de code.
+- **Migration** : additive uniquement (3 nouvelles tables). Vrai backup
+  pris avant tout changement ; upgrade → vérifié → downgrade → vérifié →
+  upgrade, exécuté contre la vraie base de dev.
+- **Full pipeline vérifié contre le vrai stack Docker** : conteneurs
+  `cyberlab-api`/`cyberlab-worker`/`cyberlab-frontend` reconstruits et
+  redémarrés. Mission créée avec un objectif en langage naturel contre
+  l'Asset DVWA réel et Ollama réel (`qwen2.5-coder:3b`) → 6 étapes
+  réelles proposées → Approve → premier `Job` (`amass`) créé, enfilé,
+  repris par le vrai worker RQ, appel réel à l'agent Kali (`200 OK`) →
+  `Job` `FAILED` (un vrai résultat d'outil : erreur `sudo`/conteneur non
+  liée à cette phase, pas une simulation) → l'étape correctement
+  réconciliée en `FAILED`, la Mission arrêtée, les 5 étapes suivantes
+  laissées `PENDING` sans y toucher. Report Proposal généré par le
+  modèle pour un projet réel, édité, `Generate` → rapport réellement créé
+  via `POST /api/reports` et visible dans "Past reports" au même titre
+  qu'un rapport manuel. 58 nouveaux tests backend (456 au total), 25
+  nouveaux tests frontend (93 au total).
+- See [docs/phase-18-ai-agents.md](docs/phase-18-ai-agents.md) for the
+  full architecture, audit, and verification log.
+
 ## Unreleased — Cross-cutting — Frontend Architecture & UX (18a–18e)
 
 Frontend-only consolidation pass, run between the official Phase 17

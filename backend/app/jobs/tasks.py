@@ -1,3 +1,4 @@
+import logging
 from datetime import datetime, timezone
 
 from app.assets.activity import record_asset_activity, technologies_from_whatweb
@@ -15,6 +16,8 @@ from app.risk.service import seed_cvss_from_tool
 from app.tools import registry
 from app.tools.parsers import parse_output
 from app.tools.parsers.nuclei import cvss_hints
+
+logger = logging.getLogger("cyberlab.jobs.tasks")
 
 
 def run_tool_job(tool: str, args: list[str], timeout: int = 60) -> dict:
@@ -45,6 +48,25 @@ def execute_job(job_id: str, tool_name: str, params: dict, timeout: int | None =
     PostgreSQL and broadcasts each transition over Redis pub/sub so the
     WebSocket layer can push live updates to the frontend.
     """
+    try:
+        _execute_job(job_id, tool_name, params, timeout)
+    finally:
+        # Phase 18: outermost finally, so this runs after the job's own
+        # session (below) has already closed and its terminal status
+        # already committed -- including on the outer `except Exception:
+        # ... raise` path, where code placed *after* (rather than in a
+        # finally wrapping) the try/finally below would never run. A brand
+        # new session, fully isolated try/except: a bug here can never
+        # mutate `job.status` or turn a successful Job back into a failure.
+        try:
+            from app.ai.orchestrator import advance_mission_for_job  # local: avoids a tasks<->orchestrator import cycle
+
+            advance_mission_for_job(job_id)
+        except Exception:
+            logger.exception("mission advancement failed for job %s", job_id)
+
+
+def _execute_job(job_id: str, tool_name: str, params: dict, timeout: int | None = None) -> None:
     session = get_sync_session()
     try:
         job = session.get(Job, job_id)

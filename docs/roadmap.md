@@ -166,7 +166,8 @@ CyberLab Risk Score = f(CVSS, EPSS, KEV, criticité asset, confiance du finding)
 > mené entre la fin de la Phase 17 et le début de la Phase 18 officielle,
 > et documenté ici pour que l'historique reste compréhensible sans créer
 > de confusion avec la vraie Phase 18 (Agents spécialisés IA, section 6
-> ci-dessous — **non commencée**).
+> ci-dessous — **livrée depuis**, voir
+> [phase-18-ai-agents.md](phase-18-ai-agents.md)).
 
 **Objectif** : traiter la dette d'architecture/UX frontend accumulée sur
 les Phases 13–17 (color-maps dupliquées, états loading/empty ad hoc,
@@ -229,6 +230,8 @@ Orchestrateur (nouveau, mais mince)
   | 4 — Autonomous Lab Operations | Non, et à ne construire *que* dans un Lab (jamais AUTHORIZED/LOCAL) | Réservé aux conteneurs de labs jetables (Phase 7) — jamais une cible réelle. |
 
 **Complexité** : M — le plus dur n'est pas le code, c'est de résister à la tentation de donner un chemin d'exécution direct à un agent "pour aller plus vite".
+
+**Résultat réel** : Niveau 2 livré (`Mission`/`MissionStep`/`MissionOrchestrator`) — un plan approuvé une fois s'exécute étape par étape sans reconfirmation humaine, chaque étape revalidée par `is_executable()`/`prepare_job()` avant de partir, jamais un chemin d'exécution parallèle à `POST /api/jobs`. Niveau 3 **non livré comme autonomie complète** (pas d'enchaînement conditionnel entre étapes) mais ses fondations le sont : kill switch (`cancel_mission`), `max_steps`, verrouillage anti-concurrence à deux sessions PostgreSQL vérifié réel. Niveau 4 non livré, hors scope. Correlation Agent et Report Agent livrés, tous deux strictement en lecture seule (aucun accès `Session`, vérifié statiquement) — voir [phase-18-ai-agents.md](phase-18-ai-agents.md) pour l'architecture complète, l'audit de sécurité, et la vérification en conditions réelles (Docker + navigateur + Ollama réel).
 
 ### Phase 19 — Mémoire IA par Projet/Asset
 

@@ -77,3 +77,50 @@ def build_planner_prompt(
     if authorization_status is not None:
         authorization_line = f"Target authorization status: {authorization_status}\n"
     return f"Target: {target}\n{authorization_line}Goal: {goal}\n\nAvailable tools:\n{tools_desc}\n"
+
+
+CORRELATION_SYSTEM = """You are a security correlation assistant inside CyberLab, a local \
+cybersecurity lab tool used only for authorized testing. You are given a list of Findings \
+already discovered on one asset (each with an id), plus the asset's known technologies/CVEs. \
+A separate, deterministic rule engine already links findings that share an open port or an \
+exact technology-name match — do not repeat those. Your job is to spot non-obvious links a \
+fixed rule would miss: e.g. an outdated library finding that plausibly enables a vulnerability \
+finding, or two findings that describe the same underlying issue in different words.
+
+Respond with a single JSON object matching exactly this shape, no prose outside the JSON:
+{
+  "suggestions": [
+    {"finding_id": "<one of the listed finding ids>", "related_finding_id": "<a different listed \
+finding id>", "rationale": "one sentence explaining the link"}
+  ]
+}
+Only use finding ids from the list you were given — never invent one. If you see no plausible \
+non-obvious link, return an empty "suggestions" list rather than forcing one."""
+
+
+def build_correlation_prompt(findings: list[dict], graph_context: list[str] | None = None) -> str:
+    findings_desc = json.dumps(findings, indent=2)
+    context_lines = ""
+    if graph_context:
+        context_lines = "\nKnown technologies/CVEs on this asset:\n" + "\n".join(f"- {c}" for c in graph_context)
+    return f"Findings on this asset:\n{findings_desc}\n{context_lines}\n"
+
+
+REPORT_SYSTEM = """You are a reporting assistant inside CyberLab, a local cybersecurity lab tool \
+used only for authorized testing. You are given a list of completed Jobs (tool runs) for a \
+project. Propose a report: a short, descriptive title and which of the listed job ids should be \
+included — you never generate the report itself, only a proposal a human reviews and edits \
+before it is actually created.
+
+Respond with a single JSON object matching exactly this shape, no prose outside the JSON:
+{
+  "title": "short descriptive report title",
+  "job_ids": ["<one of the listed job ids>", ...],
+  "rationale": "one or two sentences explaining the proposed scope"
+}
+Only use job ids from the list you were given — never invent one."""
+
+
+def build_report_proposal_prompt(project_name: str, jobs: list[dict]) -> str:
+    jobs_desc = json.dumps(jobs, indent=2)
+    return f"Project: {project_name}\n\nCompleted jobs:\n{jobs_desc}\n"
