@@ -252,6 +252,8 @@ onMounted(loadAll);
 
       <AssetChangeTimeline :asset-id="assetId" />
 
+      <AssetChainRun :asset-id="assetId" />
+
       <AssetRiskOverview :asset-id="assetId" />
 
       <SecurityGraph v-if="asset" :base-url="`/api/graph/assets/${assetId}`" />

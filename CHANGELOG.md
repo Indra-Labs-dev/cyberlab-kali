@@ -1,5 +1,90 @@
 # Changelog
 
+## Unreleased — Phase 21 — Tool Orchestrator (chaînage de jobs)
+
+Chaînage **déterministe** de jobs (`nmap` → `whatweb` → `nuclei`, chaque
+étape gardée par une condition simple sur le résultat de la précédente),
+entièrement séparé de la Phase 18 (Agents IA) -- rappel explicite déjà
+donné pendant la conception de la Phase 18 : "Ne pas confondre le futur
+orchestrateur IA de Phase 18 avec le Tool Orchestrator de Phase 21." Voir
+[docs/phase-21-tool-orchestrator.md](docs/phase-21-tool-orchestrator.md)
+pour l'architecture complète.
+
+- **`MissionTemplate`/`MissionTemplateStep`** (définition, réutilisable,
+  aucune IA) + **`ChainRun`/`ChainRunStep`** (une exécution réelle contre
+  un Asset précis, étapes copiées du template à la création -- jamais une
+  référence vivante, même précédent que `MissionStep`, Phase 18).
+  Démarrer un run est déjà l'action délibérée de l'humain : pas d'étape
+  DRAFT/APPROVED séparée, contrairement à la Mission IA de la Phase 18
+  (qui doit réviser un plan proposé par un modèle).
+- **`advance_chain_run()`** (`backend/app/chains/service.py`) est le 4ᵉ
+  appelant indépendant de `is_executable()` + `prepare_job()` dans ce
+  projet -- après `POST /api/jobs`, le ticker Phase 14, et
+  l'orchestrateur Mission Phase 18. Jamais un chemin d'exécution
+  parallèle : `app/jobs/service.py` et `app/api/routes/jobs.py` non
+  modifiés par cette phase.
+- **Isolation** : avancer une chaîne crée un nouveau `Job` -- la même
+  catégorie de risque que l'avancement de Mission (Phase 18), donc le
+  même patron d'isolation (hook dans le `finally` le plus externe
+  d'`execute_job()`, session séparée, ne peut jamais affecter
+  `job.status`) -- **pas** le patron inline du hash de la Phase 20
+  (calcul local sans création de Job).
+- **3 conditions, aucun DSL** (`backend/app/chains/conditions.py`) :
+  `PORT_OPEN` (résultat nmap), `TECHNOLOGY_DETECTED` (réutilise
+  `technologies_from_whatweb()`, Phase 13/14, telle quelle), `MIN_SEVERITY`
+  (résultat nuclei, table de rang dédiée sur les sévérités minuscules).
+  Cas spécial étroit et documenté comme tel : auto-injection des `tags`
+  nuclei depuis les technologies détectées par whatweb (assainies contre
+  le pattern réel de l'argument, jamais un mécanisme de templating
+  général).
+- **Divergence documentée** : une condition non remplie marque l'étape
+  `SKIPPED` et le run **`COMPLETED`** (arrêt normal et attendu d'un
+  pipeline conditionnel) -- délibérément différent du `SKIPPED` de la
+  Phase 18, toujours `FAILED` (toujours une autorisation révoquée ou une
+  erreur d'outil, toujours préoccupant). Autorisation révoquée ou outil
+  invalide restent `FAILED` ici aussi.
+- **Concurrence** : verrouillage bloquant `SELECT ... FOR UPDATE` (pas
+  `SKIP LOCKED`), même patron que la Phase 18, prouvé avec deux vrais
+  threads/deux vraies sessions PostgreSQL : exactement un `Job` créé pour
+  une même étape.
+- **API** : `POST/GET/DELETE /api/chains/templates`, `POST/GET
+  /api/chains/runs`, `GET /api/chains/runs/{id}`, `POST
+  /api/chains/runs/{id}/cancel`. Validation à la création d'un template :
+  outil/profil réellement enregistrés (Tool Registry), première étape
+  obligatoirement `ALWAYS`. Supprimer un template ne détruit jamais
+  l'historique de ses runs (`ON DELETE SET NULL`, étapes déjà copiées).
+- **Frontend** : nouvelle page `/chains` (gestion des templates) et
+  nouvelle section "Tool Orchestrator" sur la page Asset
+  (`AssetChainRun.vue`) -- démarrage immédiat, polling borné (même
+  idiome que `/ai/missions`), badges dédiés
+  (`ChainRunStatusBadge`/`ChainRunStepStatusBadge`) délibérément non
+  partagés avec ceux de la Phase 18.
+- **Sécurité** : 5 nouvelles routes ajoutées à
+  `test_every_api_route_is_guarded_when_auth_enabled`. Détail complet
+  dans docs/security.md.
+- **Bug réel trouvé pendant la vérification** : dans la fixture de test
+  elle-même (un Asset inséré directement en base sans passer par
+  `infer_default_authorization()` restait `UNKNOWN` au lieu de `LAB`),
+  pas dans le code de production -- corrigé dans le test uniquement.
+- **Migration** : additive uniquement (4 nouvelles tables). Vrai backup
+  pris avant tout changement ; upgrade → vérifié → downgrade → vérifié →
+  upgrade, exécuté contre la vraie base de dev.
+- **Full pipeline vérifié contre le vrai stack Docker** : template réel
+  créé via l'UI (`nmap quick_scan` → `whatweb`, condition `PORT_OPEN` sur
+  `[80, 443]`), lancé contre l'Asset DVWA réel → run démarré
+  immédiatement (`RUNNING`) → `nmap` exécuté réellement par le worker
+  RQ/l'agent Kali → condition évaluée contre le **vrai** résultat nmap
+  parsé (port non trouvé ouvert dans ce scan réel) → étape 2
+  correctement `SKIPPED` (`condition not met: PORT_OPEN`) → run
+  correctement `COMPLETED` (pas `FAILED`) -- la sémantique "arrêt normal"
+  fonctionne en conditions réelles, pas seulement en test. Le hook
+  Mémoire IA (Phase 19) a échoué en parallèle (Ollama injoignable) sans
+  aucun effet sur le Job ni sur le run -- preuve supplémentaire en
+  conditions réelles de l'indépendance des hooks. 67 nouveaux tests
+  backend (559 au total), 28 nouveaux tests frontend (123 au total).
+- See [docs/phase-21-tool-orchestrator.md](docs/phase-21-tool-orchestrator.md)
+  for the full architecture, audit, and verification log.
+
 ## Unreleased — Phase 20 — Evidence & Chain of Custody
 
 Hash SHA-256 du `stdout` de chaque `Job` (preuve d'intégrité minimale, pas

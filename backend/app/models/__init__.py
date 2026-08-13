@@ -6,6 +6,15 @@ from app.models.finding_relation import FindingRelation, FindingStatusHistory
 from app.models.graph_edge import GraphEdge
 from app.models.job import Job, JobStatus
 from app.models.mission import Mission, MissionStatus, MissionStep, MissionStepStatus
+from app.models.mission_template import (
+    ChainConditionType,
+    ChainRun,
+    ChainRunStatus,
+    ChainRunStep,
+    ChainRunStepStatus,
+    MissionTemplate,
+    MissionTemplateStep,
+)
 from app.models.project import Project, ProjectStatus
 from app.models.project_ai_summary import ProjectAISummary
 from app.models.report import Report, ReportFormat
@@ -49,4 +58,11 @@ __all__ = [
     "AICorrelationSuggestion",
     "SuggestionStatus",
     "ProjectAISummary",
+    "MissionTemplate",
+    "MissionTemplateStep",
+    "ChainConditionType",
+    "ChainRun",
+    "ChainRunStatus",
+    "ChainRunStep",
+    "ChainRunStepStatus",
 ]

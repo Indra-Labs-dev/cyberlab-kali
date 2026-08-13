@@ -276,6 +276,8 @@ nuclei (quick_scan, filtré sur les tags pertinents)
 
 **Complexité** : M.
 
+**Résultat réel** : livré. `MissionTemplate`/`MissionTemplateStep` (définition, humaine, aucune IA) + `ChainRun`/`ChainRunStep` (une exécution réelle, étapes copiées du template à la création). `advance_chain_run()` est le 4ᵉ appelant indépendant de `is_executable()`/`prepare_job()` (après `POST /api/jobs`, le ticker Phase 14, l'orchestrateur Mission Phase 18) — jamais un chemin d'exécution parallèle. Démarrer un run est lui-même l'action délibérée de l'humain (pas d'étape d'approbation séparée, contrairement à la Mission IA de la Phase 18 qui doit réviser un plan proposé par un modèle). Les 3 conditions prévues (port ouvert, techno détectée, sévérité minimale) sont toutes livrées, y compris le cas nuclei/tags nommé explicitement par l'exemple. Vérifié en conditions réelles (Docker + navigateur) : run démarré immédiatement, `nmap` exécuté réellement par le worker/l'agent Kali, condition évaluée contre le vrai résultat parsé, arrêt normal (`COMPLETED`, pas `FAILED`) quand la condition n'est pas remplie — voir [phase-21-tool-orchestrator.md](phase-21-tool-orchestrator.md) pour l'architecture complète et l'audit de sécurité.
+
 ### Phase 22 — Reports 2.0 & Pentest Workspace
 
 - Reprendre les formats du brouillon (Executive/Technical/Evidence Package) — réalistes, ce sont des templates Jinja2/reportlab supplémentaires sur le moteur de rapports déjà existant (Phase 9), pas une réécriture.

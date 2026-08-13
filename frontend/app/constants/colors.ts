@@ -13,6 +13,7 @@
 // the moment two domains diverge (as FindingStatus already does today, see
 // FINDING_STATUS_COLORS below).
 import type { AssetCriticality, AuthorizationStatus } from "~/types/asset";
+import type { ChainRunStatus, ChainRunStepStatus } from "~/types/chain";
 import type { FindingStatus, RiskPriority, Severity } from "~/types/finding";
 import type { MissionStatus, MissionStepStatus } from "~/types/mission";
 
@@ -96,6 +97,27 @@ export const MISSION_STATUS_COLORS: Record<MissionStatus, string> = {
 };
 
 export const MISSION_STEP_STATUS_COLORS: Record<MissionStepStatus, string> = {
+  PENDING: "bg-slate-700/50 text-slate-300",
+  SKIPPED: "bg-slate-700/50 text-slate-500",
+  QUEUED: "bg-amber-500/15 text-amber-400",
+  SUCCESS: "bg-emerald-500/15 text-emerald-400",
+  FAILED: "bg-red-500/15 text-red-400",
+  CANCELLED: "bg-slate-700/50 text-slate-500",
+};
+
+// Phase 21 -- Tool Orchestrator (deterministic chain runs). Deliberately
+// its own map, not reused from MISSION_STATUS_COLORS: a ChainRun has no
+// DRAFT/APPROVED states (no AI-proposed plan to review, see
+// backend/app/chains/service.py's module docstring) and starts RUNNING
+// immediately.
+export const CHAIN_RUN_STATUS_COLORS: Record<ChainRunStatus, string> = {
+  RUNNING: "bg-amber-500/15 text-amber-400",
+  COMPLETED: "bg-emerald-500/15 text-emerald-400",
+  FAILED: "bg-red-500/15 text-red-400",
+  CANCELLED: "bg-slate-700/50 text-slate-500",
+};
+
+export const CHAIN_RUN_STEP_STATUS_COLORS: Record<ChainRunStepStatus, string> = {
   PENDING: "bg-slate-700/50 text-slate-300",
   SKIPPED: "bg-slate-700/50 text-slate-500",
   QUEUED: "bg-amber-500/15 text-amber-400",

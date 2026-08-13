@@ -121,6 +121,11 @@ def test_websocket_rejects_missing_token_when_auth_enabled(monkeypatch):
         "/api/ai/reports/propose",
         "/api/ai/projects/00000000-0000-0000-0000-000000000000/summary",
         "/api/ai/projects/00000000-0000-0000-0000-000000000000/summary/regenerate",
+        "/api/chains/templates",
+        "/api/chains/templates/00000000-0000-0000-0000-000000000000",
+        "/api/chains/runs",
+        "/api/chains/runs/00000000-0000-0000-0000-000000000000",
+        "/api/chains/runs/00000000-0000-0000-0000-000000000000/cancel",
     ],
 )
 async def test_every_api_route_is_guarded_when_auth_enabled(monkeypatch, path):

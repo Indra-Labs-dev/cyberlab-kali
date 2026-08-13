@@ -25,6 +25,7 @@ const soonPrimary: NavItem[] = [];
 const soonSecondary: NavItem[] = [{ to: "/recon", label: "Recon", icon: "⟳" }];
 const secondaryNav: NavItem[] = [
   { to: "/tools", label: "Tools", icon: "⚒" },
+  { to: "/chains", label: "Chain Templates", icon: "⛓" },
   { to: "/scans", label: "Scans", icon: "⌘" },
   { to: "/terminal", label: "Terminal", icon: "⌥" },
   { to: "/labs", label: "Labs", icon: "⬢" },

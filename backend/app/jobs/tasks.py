@@ -79,6 +79,18 @@ def execute_job(job_id: str, tool_name: str, params: dict, timeout: int | None =
         except Exception:
             logger.exception("project summary regeneration failed for job %s", job_id)
 
+        # Phase 21 -- same isolation reasoning as the Mission hook above:
+        # advancing a chain run means *creating a new Job*, the same
+        # "next-job-creation" concern Phase 18 already isolated from this
+        # job's own transaction. A bug in condition evaluation or Job
+        # creation here can never flip this Job back to FAILED.
+        try:
+            from app.chains.service import advance_chain_run_for_job  # local: avoids a tasks<->chains import cycle
+
+            advance_chain_run_for_job(job_id)
+        except Exception:
+            logger.exception("chain run advancement failed for job %s", job_id)
+
 
 def _execute_job(job_id: str, tool_name: str, params: dict, timeout: int | None = None) -> None:
     session = get_sync_session()

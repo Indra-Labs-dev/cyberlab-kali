@@ -4,6 +4,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.api.routes import (
     ai,
     assets,
+    chains,
     findings,
     graph,
     health,
@@ -51,3 +52,4 @@ app.include_router(assets.router, prefix="/api")
 app.include_router(schedules.router, prefix="/api")
 app.include_router(intelligence.router, prefix="/api")
 app.include_router(graph.router, prefix="/api")
+app.include_router(chains.router, prefix="/api")
