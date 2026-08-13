@@ -1,5 +1,85 @@
 # Changelog
 
+## Unreleased — Cross-cutting — Frontend Architecture & UX (18a–18e)
+
+Frontend-only consolidation pass, run between the official Phase 17
+(Security Graph) and Phase 18 (specialized AI agents) of
+[docs/roadmap.md](docs/roadmap.md) — **not itself a numbered roadmap
+phase**. Addresses architectural/UX debt that had accumulated across
+Phases 13–17 (local color-maps, ad-hoc loading/empty states, flat
+navigation, an 895-line Asset detail page) before AI agents add more
+surface to the frontend. No backend, API, or database change in any of
+18a–18e, and no AI-agent code — the official Phase 18 has not started.
+
+- **18a — Foundations**: shared TypeScript types mirroring backend schemas
+  field-for-field (`Asset`, `Finding`, `Project`, `GraphNode`/`GraphEdge`,
+  `RiskSummary`), centralized design-system color maps
+  (`app/constants/colors.ts` — severity / risk-priority / criticality /
+  authorization / finding-status / tool-risk-level kept as five
+  deliberately separate domains, never merged), `Badge` + domain badges
+  (`SeverityBadge`/`RiskBadge`/`StatusBadge`/`CriticalityBadge`/
+  `AuthorizationBadge`), `LoadingState`/`EmptyState`, `useAssets()`/
+  `useProjects()` composables, Vitest set up from scratch (plain
+  `@vitejs/plugin-vue` + `happy-dom`, no `@nuxt/test-utils`).
+- **18b — Navigation**: hierarchical sidebar (Attack Surface vs Execution &
+  Support), `/targets` renamed to `/assets` with legacy `/targets` and
+  `/targets/:id` kept as native vue-router redirects
+  (`definePageMeta({ redirect })`) — bookmarks and old links keep working.
+  Section-aware active-route matching (`app/utils/navigation.ts`),
+  accessible mobile drawer (Escape, backdrop, focus-visible), `aria-current`
+  on the active nav item.
+- **18c — Graph & Intelligence**: `/graph` (global Security Graph entry
+  point with search-by-asset/finding/CVE/service/technology) and
+  `/intelligence` (EPSS/CISA KEV/NVD sync status, CVE→Findings
+  cross-search) as real pages, replacing the "Soon" placeholders from 18b.
+  `SecurityGraph.vue` reused unmodified except for a CVE-detail side panel
+  and a real mobile-overflow fix (canvas collapsing to ~2px height in the
+  `flex-col` layout).
+- **18d — Asset page decomposition**: `pages/assets/[id].vue` reduced from
+  895 to 275 lines by extracting `AssetHeader`, `AssetContinuousRecon`,
+  `AssetChangeTimeline`, `AssetRiskOverview`, `AssetFindingsList` into
+  `app/components/asset/`. Single source of truth kept in the parent page
+  (`asset`/`jobs`/`findings`/`tools`); cross-section refresh (schedule
+  "Run now" → parent's `loadAll()`) passed as an async function prop, not
+  duplicated state.
+- **18e — Consolidation**: audited and fixed color-map duplication that had
+  escaped 18a/18d in four files (`AssetHeader.vue`, `scans/[id].vue`,
+  `projects/[id].vue`, `tools/index.vue` — all swapped to the centralized
+  constants, zero domain merges); migrated the four Asset section
+  components to `LoadingState`/`EmptyState`; fixed two icon-only buttons
+  missing `aria-label` (`SecurityGraph.vue`'s panel-close button, the Asset
+  tag-remove button) and one unlabeled input; corrected "targets" →
+  "assets" wording in UI-visible labels (`projects/index.vue`,
+  `projects/[id].vue`, `tools/index.vue`) while leaving backend field
+  names, Cytoscape's own vocabulary, and the legacy redirects untouched;
+  removed `ComingSoon.vue` (confirmed zero references anywhere in `app/`).
+- **Tests**: 68 tests green across 15 files (Badge/SeverityBadge/RiskBadge/
+  StatusBadge, GraphSearchBar, CveDetailPanel, IntelligenceSyncStatus, the
+  five Asset section components, `useAssets`/`useProjects`/`useGraph`,
+  color-map and navigation-logic unit tests).
+- **Build/typecheck**: `npm run build` green; `npm run typecheck` reports
+  exactly the 26 pre-existing errors in `app/pages/tools/index.vue`
+  (`runState[tool.name]` possibly-undefined), confirmed identical to the
+  pre-18a baseline via a `git stash` comparison — pre-existing debt, not
+  introduced or hidden by this work, deliberately left unfixed per its own
+  explicit scope.
+- **Docker**: `cyberlab-frontend` rebuilt and restarted after every
+  sub-phase, never a single rebuild at the end.
+- **Browser verification**: real, repeated passes against the actual
+  Docker stack (not mocks) covering every route (`/`, `/projects`,
+  `/projects/:id`, `/assets`, `/assets/:id`, `/findings`, `/findings/:id`,
+  `/graph`, `/intelligence`, `/tools`, `/scans`, `/scans/:id`, `/terminal`,
+  `/labs`, `/ai`, `/reports`, `/settings`), desktop and mobile (375px)
+  viewports, the legacy `/targets` and `/targets/:id` redirects, and
+  end-to-end interactions against real backend data (tag add/remove,
+  schedule create/run-now/delete with confirmed cross-section refresh, AI
+  risk-analysis trigger, intel sync trigger with real EPSS/KEV network
+  calls).
+- **Explicitly does not touch**: backend, API contracts, database schema,
+  or the official Phase 18 (specialized AI agents) — no agent code exists
+  yet; see [docs/roadmap.md](docs/roadmap.md) for that phase's actual
+  scope.
+
 ## Unreleased — Phase 17 — Security Graph
 
 - **PostgreSQL only, no graph database**: a single `graph_edges` table

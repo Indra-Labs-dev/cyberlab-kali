@@ -1,31 +1,10 @@
 <script setup lang="ts">
 import type { Core, ElementDefinition } from "cytoscape";
+import type { GraphEdge, GraphNode, GraphNodeType, GraphResponse } from "~/types/graph";
 
-type NodeType = "ASSET" | "FINDING" | "CVE" | "SERVICE" | "TECHNOLOGY";
-
-interface GraphNode {
-  id: string;
-  type: NodeType;
-  label: string;
-  metadata: Record<string, unknown>;
-}
-
-interface GraphEdge {
-  id: string;
-  from_type: string;
-  from_id: string;
-  to_type: string;
-  to_id: string;
-  relation: string;
-  source: string;
-  reason: string;
-  metadata: Record<string, unknown>;
-}
-
-interface GraphResponse {
-  nodes: GraphNode[];
-  edges: GraphEdge[];
-}
+// Local alias -- keeps the rest of this file's NodeType references
+// unchanged while the canonical definition now lives in app/types/graph.ts.
+type NodeType = GraphNodeType;
 
 const props = defineProps<{
   // e.g. "/api/graph/assets/{id}" or "/api/graph/findings/{id}" -- the
@@ -254,48 +233,52 @@ onBeforeUnmount(() => cy?.destroy());
     <p v-else-if="error" class="text-sm text-red-400">{{ error }}</p>
     <p v-else-if="graph.nodes.length === 0" class="text-sm text-slate-600">No graph data yet for this node.</p>
 
-    <div v-show="!loading && !error && graph.nodes.length > 0" class="flex gap-4">
-      <div ref="container" class="h-96 flex-1 rounded-md border border-slate-800 bg-slate-950/50"></div>
+    <div v-show="!loading && !error && graph.nodes.length > 0" class="flex flex-col gap-4 md:flex-row">
+      <div ref="container" class="h-96 min-w-0 rounded-md border border-slate-800 bg-slate-950/50 md:flex-1"></div>
 
-      <div v-if="selected" class="w-64 shrink-0 rounded-md border border-slate-800 bg-slate-950/50 p-3 text-xs">
+      <div v-if="selected" class="w-full shrink-0 rounded-md border border-slate-800 bg-slate-950/50 p-3 text-xs md:w-64">
         <div class="mb-2 flex items-center justify-between">
           <span class="rounded px-1.5 py-0.5 font-medium" :style="{ background: typeColor[selected.type] + '25', color: typeColor[selected.type] }">
             {{ selected.type }}
           </span>
-          <button class="text-slate-500 hover:text-slate-300" @click="selected = null">✕</button>
-        </div>
-        <p class="mb-2 font-medium text-slate-200">{{ selected.label }}</p>
-
-        <div v-if="Object.keys(selected.metadata).length" class="mb-3 space-y-0.5 text-slate-400">
-          <p v-for="(v, k) in selected.metadata" :key="k">
-            <span class="text-slate-600">{{ k }}:</span> {{ v }}
-          </p>
+          <button class="text-slate-500 hover:text-slate-300" aria-label="Close node details" @click="selected = null">✕</button>
         </div>
 
-        <NuxtLink
-          v-if="selected.type === 'ASSET'"
-          :to="`/targets/${selected.id}`"
-          class="mb-3 block text-emerald-400 hover:underline"
-        >
-          Open Asset →
-        </NuxtLink>
-        <NuxtLink
-          v-else-if="selected.type === 'FINDING'"
-          :to="`/findings/${selected.id}`"
-          class="mb-3 block text-emerald-400 hover:underline"
-        >
-          Open Finding →
-        </NuxtLink>
+        <CveDetailPanel v-if="selected.type === 'CVE'" :cve-id="selected.id" :connections="selectedConnections" />
+        <template v-else>
+          <p class="mb-2 font-medium text-slate-200">{{ selected.label }}</p>
 
-        <p class="mb-1 font-medium text-slate-500">Connections ({{ selectedConnections.length }})</p>
-        <div class="max-h-64 space-y-2 overflow-y-auto">
-          <div v-for="c in selectedConnections" :key="c.edge.id" class="border-t border-slate-800 pt-2">
-            <p class="text-slate-400">
-              <span class="text-slate-600">{{ c.edge.relation }}</span> · {{ c.otherEnd?.label || "?" }}
+          <div v-if="Object.keys(selected.metadata).length" class="mb-3 space-y-0.5 text-slate-400">
+            <p v-for="(v, k) in selected.metadata" :key="k">
+              <span class="text-slate-600">{{ k }}:</span> {{ v }}
             </p>
-            <p class="text-slate-600">{{ c.edge.reason }}</p>
           </div>
-        </div>
+
+          <NuxtLink
+            v-if="selected.type === 'ASSET'"
+            :to="`/assets/${selected.id}`"
+            class="mb-3 block text-emerald-400 hover:underline"
+          >
+            Open Asset →
+          </NuxtLink>
+          <NuxtLink
+            v-else-if="selected.type === 'FINDING'"
+            :to="`/findings/${selected.id}`"
+            class="mb-3 block text-emerald-400 hover:underline"
+          >
+            Open Finding →
+          </NuxtLink>
+
+          <p class="mb-1 font-medium text-slate-500">Connections ({{ selectedConnections.length }})</p>
+          <div class="max-h-64 space-y-2 overflow-y-auto">
+            <div v-for="c in selectedConnections" :key="c.edge.id" class="border-t border-slate-800 pt-2">
+              <p class="text-slate-400">
+                <span class="text-slate-600">{{ c.edge.relation }}</span> · {{ c.otherEnd?.label || "?" }}
+              </p>
+              <p class="text-slate-600">{{ c.edge.reason }}</p>
+            </div>
+          </div>
+        </template>
       </div>
     </div>
   </div>

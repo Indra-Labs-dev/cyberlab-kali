@@ -1,4 +1,7 @@
 <script setup lang="ts">
+import { SEVERITY_COLORS } from "~/constants/colors";
+import type { Asset } from "~/types/asset";
+
 interface ProjectSummary {
   id: string;
   name: string;
@@ -10,16 +13,6 @@ interface ProjectSummary {
   job_count: number;
   finding_count: number;
   lab_count: number;
-}
-
-interface Target {
-  id: string;
-  name: string;
-  hostname: string | null;
-  ip_address: string | null;
-  url: string | null;
-  target_type: string;
-  authorization_status: string;
 }
 
 interface Job {
@@ -54,37 +47,30 @@ interface ReportMeta {
 
 const route = useRoute();
 const { apiFetch, downloadUrl } = useApi();
+const { listAssets } = useAssets();
 const projectId = route.params.id as string;
 
 const project = ref<ProjectSummary | null>(null);
-const targets = ref<Target[]>([]);
+const assets = ref<Asset[]>([]);
 const jobs = ref<Job[]>([]);
 const findings = ref<Finding[]>([]);
 const labs = ref<LabInstance[]>([]);
 const reports = ref<ReportMeta[]>([]);
 const loading = ref(true);
-const tab = ref<"overview" | "targets" | "scans" | "findings" | "labs" | "ai" | "reports" | "graph">("overview");
-
-const severityColor: Record<string, string> = {
-  INFO: "bg-slate-700/50 text-slate-300",
-  LOW: "bg-emerald-500/15 text-emerald-400",
-  MEDIUM: "bg-amber-500/15 text-amber-400",
-  HIGH: "bg-orange-500/15 text-orange-400",
-  CRITICAL: "bg-red-500/15 text-red-400",
-};
+const tab = ref<"overview" | "assets" | "scans" | "findings" | "labs" | "ai" | "reports" | "graph">("overview");
 
 async function loadAll() {
   loading.value = true;
   try {
-    const [proj, tgts, jbs, fnds, allReports] = await Promise.all([
+    const [proj, assetList, jbs, fnds, allReports] = await Promise.all([
       apiFetch<ProjectSummary>(`/api/projects/${projectId}`),
-      apiFetch<Target[]>(`/api/projects/${projectId}/targets`),
+      listAssets({ project_id: projectId }),
       apiFetch<Job[]>(`/api/jobs?project_id=${projectId}&limit=100`),
       apiFetch<Finding[]>(`/api/findings?project_id=${projectId}&limit=200`),
       apiFetch<ReportMeta[]>("/api/reports"),
     ]);
     project.value = proj;
-    targets.value = tgts;
+    assets.value = assetList;
     jobs.value = jbs;
     findings.value = fnds;
     const jobIdSet = new Set(jbs.map((j) => j.id));
@@ -98,7 +84,7 @@ async function loadLabs() {
   labs.value = await apiFetch<LabInstance[]>("/api/labs");
 }
 
-function address(t: Target) {
+function address(t: Asset) {
   return t.url || t.hostname || t.ip_address || "—";
 }
 
@@ -121,7 +107,7 @@ onMounted(async () => {
     <div v-else-if="project">
       <div class="flex gap-1 border-b border-slate-800 px-8">
         <button
-          v-for="t in ['overview', 'targets', 'scans', 'findings', 'labs', 'ai', 'reports', 'graph']"
+          v-for="t in ['overview', 'assets', 'scans', 'findings', 'labs', 'ai', 'reports', 'graph']"
           :key="t"
           class="border-b-2 px-3 py-2 text-sm capitalize transition-colors"
           :class="tab === t ? 'border-emerald-500 text-emerald-400' : 'border-transparent text-slate-500 hover:text-slate-300'"
@@ -135,7 +121,7 @@ onMounted(async () => {
       <div v-if="tab === 'overview'" class="grid grid-cols-2 gap-4 px-8 py-6 sm:grid-cols-4">
         <div class="rounded-lg border border-slate-800 bg-slate-900/40 p-4">
           <p class="text-2xl font-semibold text-slate-200">{{ project.target_count }}</p>
-          <p class="text-xs text-slate-500">Targets</p>
+          <p class="text-xs text-slate-500">Assets</p>
         </div>
         <div class="rounded-lg border border-slate-800 bg-slate-900/40 p-4">
           <p class="text-2xl font-semibold text-slate-200">{{ project.job_count }}</p>
@@ -155,22 +141,22 @@ onMounted(async () => {
         </div>
       </div>
 
-      <!-- Targets -->
-      <div v-else-if="tab === 'targets'" class="px-8 py-6">
+      <!-- Assets -->
+      <div v-else-if="tab === 'assets'" class="px-8 py-6">
         <div class="mb-3 flex justify-end">
-          <NuxtLink to="/targets" class="text-xs text-emerald-400 hover:underline">Manage targets →</NuxtLink>
+          <NuxtLink to="/assets" class="text-xs text-emerald-400 hover:underline">Manage assets →</NuxtLink>
         </div>
-        <p v-if="targets.length === 0" class="text-sm text-slate-600">No targets in this project yet.</p>
+        <p v-if="assets.length === 0" class="text-sm text-slate-600">No assets in this project yet.</p>
         <div v-else class="space-y-2">
           <NuxtLink
-            v-for="t in targets"
+            v-for="t in assets"
             :key="t.id"
-            :to="`/targets/${t.id}`"
+            :to="`/assets/${t.id}`"
             class="flex items-center justify-between rounded-lg border border-slate-800 bg-slate-900/40 p-3 hover:bg-slate-900/70"
           >
             <div>
               <p class="text-sm font-medium text-slate-200">{{ t.name }}</p>
-              <p class="text-xs text-slate-500">{{ address(t) }} · {{ t.target_type }}</p>
+              <p class="text-xs text-slate-500">{{ address(t) }} · {{ t.type }}</p>
             </div>
             <span class="rounded px-1.5 py-0.5 text-xs bg-slate-800 text-slate-400">{{ t.authorization_status }}</span>
           </NuxtLink>
@@ -206,7 +192,7 @@ onMounted(async () => {
             :to="`/scans/${f.job_id}`"
             class="flex items-center gap-2 rounded-lg border border-slate-800 bg-slate-900/40 p-3 hover:bg-slate-900/70"
           >
-            <span class="rounded px-1.5 py-0.5 text-xs" :class="severityColor[f.severity]">{{ f.severity }}</span>
+            <span class="rounded px-1.5 py-0.5 text-xs" :class="SEVERITY_COLORS[f.severity as keyof typeof SEVERITY_COLORS]">{{ f.severity }}</span>
             <span class="text-sm text-slate-200">{{ f.title }}</span>
             <span class="ml-auto text-xs text-slate-600">{{ f.source_tool }}</span>
           </NuxtLink>
@@ -231,7 +217,7 @@ onMounted(async () => {
       <!-- AI -->
       <div v-else-if="tab === 'ai'" class="px-8 py-6">
         <p class="text-sm text-slate-600">
-          Ask the AI Assistant about this project's targets and findings from the
+          Ask the AI Assistant about this project's assets and findings from the
           <NuxtLink to="/ai" class="text-emerald-400 hover:underline">AI Assistant page →</NuxtLink>
         </p>
       </div>

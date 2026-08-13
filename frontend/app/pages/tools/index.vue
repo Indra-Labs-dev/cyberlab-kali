@@ -1,4 +1,7 @@
 <script setup lang="ts">
+import { TOOL_RISK_LEVEL_COLORS } from "~/constants/colors";
+import type { Asset } from "~/types/asset";
+
 interface ArgumentDef {
   name: string;
   type: "target" | "url" | "string" | "boolean" | "choice" | "integer";
@@ -36,22 +39,6 @@ interface HealthEntry {
   detail: string | null;
 }
 
-interface Target {
-  id: string;
-  project_id: string;
-  name: string;
-  hostname: string | null;
-  ip_address: string | null;
-  url: string | null;
-  authorization_status: "LAB" | "AUTHORIZED" | "LOCAL" | "UNKNOWN";
-}
-
-const riskColor: Record<string, string> = {
-  SAFE: "bg-emerald-500/15 text-emerald-400",
-  CAUTION: "bg-amber-500/15 text-amber-400",
-  RESTRICTED: "bg-orange-500/15 text-orange-400",
-  MANUAL_ONLY: "bg-red-500/15 text-red-400",
-};
 
 const healthIcon: Record<string, string> = {
   ready: "✓",
@@ -79,11 +66,12 @@ const categoryLabels: Record<string, string> = {
 };
 
 const { apiFetch } = useApi();
+const { listAssets } = useAssets();
 const router = useRouter();
 
 const tools = ref<ToolDef[]>([]);
 const health = ref<Record<string, HealthEntry>>({});
-const targets = ref<Target[]>([]);
+const targets = ref<Asset[]>([]);
 const loading = ref(true);
 const healthLoading = ref(false);
 
@@ -146,13 +134,13 @@ async function loadHealth() {
 
 async function loadTargets() {
   try {
-    targets.value = await apiFetch<Target[]>("/api/targets");
+    targets.value = await listAssets();
   } catch {
     targets.value = [];
   }
 }
 
-function targetAddress(t: Target) {
+function targetAddress(t: Asset) {
   return t.url || t.hostname || t.ip_address || t.name;
 }
 
@@ -187,7 +175,7 @@ async function runTool(tool: ToolDef) {
   const body: Record<string, unknown> = { tool: tool.name };
   if (state.targetMode === "existing") {
     if (!state.targetId) {
-      submitError.value[tool.name] = "Select a target";
+      submitError.value[tool.name] = "Select an asset";
       submitting.value = null;
       return;
     }
@@ -297,7 +285,7 @@ onMounted(async () => {
         >
           <div class="mb-1 flex items-center justify-between">
             <span class="font-medium capitalize text-slate-200">{{ tool.name }}</span>
-            <span class="rounded px-1.5 py-0.5 text-xs" :class="riskColor[tool.risk_level]">{{ tool.risk_level }}</span>
+            <span class="rounded px-1.5 py-0.5 text-xs" :class="TOOL_RISK_LEVEL_COLORS[tool.risk_level]">{{ tool.risk_level }}</span>
           </div>
           <div class="mb-2 text-xs text-slate-500">{{ categoryLabels[tool.category] || tool.category }}</div>
           <p class="mb-3 line-clamp-2 flex-1 text-sm text-slate-400">{{ tool.description }}</p>
@@ -362,7 +350,7 @@ onMounted(async () => {
                   :class="runState[tool.name].targetMode === 'existing' ? 'bg-slate-800 text-slate-200' : 'text-slate-500'"
                   @click="runState[tool.name].targetMode = 'existing'"
                 >
-                  Existing target
+                  Existing asset
                 </button>
                 <button
                   class="rounded px-2 py-1"
@@ -377,7 +365,7 @@ onMounted(async () => {
                 v-model="runState[tool.name].targetId"
                 class="w-full rounded-md border border-slate-700 bg-slate-950 px-2 py-1.5 text-sm text-slate-200"
               >
-                <option value="">Select a target…</option>
+                <option value="">Select an asset…</option>
                 <option v-for="t in targets" :key="t.id" :value="t.id">
                   {{ t.name }} ({{ targetAddress(t) }}) — {{ t.authorization_status }}
                 </option>

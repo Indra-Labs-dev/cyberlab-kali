@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import type { Asset } from "~/types/asset";
+
 interface ChatTurn {
   role: "user" | "assistant";
   content: string;
@@ -22,24 +24,20 @@ interface MissionPlan {
   raw_response: string | null;
 }
 
-interface Target {
-  id: string;
-  name: string;
-  hostname: string | null;
-  ip_address: string | null;
-  url: string | null;
-  authorization_status: string;
-}
-
 const { apiFetch } = useApi();
+const { listAssets } = useAssets();
 
 // --- Shared target context ---
-const targets = ref<Target[]>([]);
+// Kept as "targets"/"Target" in local variable and function names -- this
+// page's own vocabulary (Mission Planner steps still say "target") is
+// unrelated to the /api/targets vs /api/assets endpoint fix below; only
+// the data source changes here, not this page's terminology.
+const targets = ref<Asset[]>([]);
 const activeTargetId = ref("");
 const activeTarget = computed(() => targets.value.find((t) => t.id === activeTargetId.value) || null);
 
 async function loadTargets() {
-  targets.value = await apiFetch<Target[]>("/api/targets");
+  targets.value = await listAssets();
 }
 
 // --- Chat ---
@@ -118,7 +116,7 @@ async function runStep(step: MissionStep, index: number) {
   }
 }
 
-function targetLabel(t: Target) {
+function targetLabel(t: Asset) {
   const address = t.url || t.hostname || t.ip_address || "—";
   return `${t.name} (${address}) — ${t.authorization_status}`;
 }

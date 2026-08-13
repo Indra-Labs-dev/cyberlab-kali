@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { AI_RISK_COLORS } from "~/constants/colors";
+
 interface AnalysisResult {
   risk: "INFO" | "LOW" | "MEDIUM" | "HIGH" | "CRITICAL";
   summary: string;
@@ -37,14 +39,6 @@ const loading = ref(true);
 const cancelling = ref(false);
 const analyzing = ref(false);
 const analyzeError = ref("");
-
-const riskColor: Record<string, string> = {
-  INFO: "bg-slate-700/50 text-slate-300",
-  LOW: "bg-emerald-500/15 text-emerald-400",
-  MEDIUM: "bg-amber-500/15 text-amber-400",
-  HIGH: "bg-orange-500/15 text-orange-400",
-  CRITICAL: "bg-red-500/15 text-red-400",
-};
 
 async function analyzeWithAI() {
   analyzing.value = true;
@@ -104,8 +98,8 @@ onMounted(loadJob);
       <div class="flex items-center gap-4">
         <JobStatusBadge :status="job.status" />
         <span v-if="job.exit_code !== null" class="text-xs text-slate-500">exit code {{ job.exit_code }}</span>
-        <NuxtLink v-if="job.target_id" :to="`/targets/${job.target_id}`" class="text-xs text-emerald-400 hover:underline">
-          View target
+        <NuxtLink v-if="job.target_id" :to="`/assets/${job.target_id}`" class="text-xs text-emerald-400 hover:underline">
+          View asset
         </NuxtLink>
         <NuxtLink v-if="job.project_id" :to="`/projects/${job.project_id}`" class="text-xs text-emerald-400 hover:underline">
           View project
@@ -154,7 +148,7 @@ onMounted(loadJob);
         <p v-else-if="!job.ai_analysis" class="text-sm text-slate-600">Not analyzed yet.</p>
         <div v-else class="space-y-3">
           <div class="flex items-center gap-2">
-            <span class="rounded px-2 py-0.5 text-xs font-medium" :class="riskColor[job.ai_analysis.risk]">
+            <span class="rounded px-2 py-0.5 text-xs font-medium" :class="AI_RISK_COLORS[job.ai_analysis.risk]">
               {{ job.ai_analysis.risk }}
             </span>
             <p class="text-sm text-slate-300">{{ job.ai_analysis.summary }}</p>

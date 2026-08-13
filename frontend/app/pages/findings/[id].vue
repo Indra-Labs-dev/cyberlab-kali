@@ -1,45 +1,6 @@
 <script setup lang="ts">
-type FindingStatus = "NEW" | "CONFIRMED" | "IN_REVIEW" | "ACCEPTED_RISK" | "FALSE_POSITIVE" | "REMEDIATED" | "REOPENED";
-
-interface Finding {
-  id: string;
-  job_id: string;
-  target: string;
-  source_tool: string;
-  title: string;
-  description: string;
-  severity: "INFO" | "LOW" | "MEDIUM" | "HIGH" | "CRITICAL";
-  confidence: string;
-  evidence: Record<string, unknown>;
-  recommendation: string | null;
-  created_at: string;
-  cve_ids: string[];
-  // Phase 16 -- deduplication/lifecycle.
-  status: FindingStatus;
-  first_seen: string;
-  last_seen: string;
-  observation_count: number;
-  source_tools: string[];
-}
-
-interface StatusHistoryEntry {
-  id: string;
-  finding_id: string;
-  old_status: FindingStatus | null;
-  new_status: FindingStatus;
-  reason: string | null;
-  triggered_by: string;
-  created_at: string;
-}
-
-interface FindingRelation {
-  id: string;
-  finding_id: string;
-  related_finding_id: string;
-  rule: string;
-  reason: string;
-  created_at: string;
-}
+import { RISK_PRIORITY_COLORS } from "~/constants/colors";
+import type { Finding, FindingRelation, FindingStatus, FindingStatusHistoryEntry } from "~/types/finding";
 
 // Mirrors backend/app/findings/lifecycle.py::VALID_TRANSITIONS -- used only
 // to decide which action buttons to show; the backend is the actual
@@ -91,7 +52,7 @@ const findingId = route.params.id as string;
 
 const finding = ref<Finding | null>(null);
 const risk = ref<RiskDetail | null>(null);
-const history = ref<StatusHistoryEntry[]>([]);
+const history = ref<FindingStatusHistoryEntry[]>([]);
 const relations = ref<FindingRelation[]>([]);
 const loading = ref(true);
 const loadError = ref("");
@@ -100,30 +61,6 @@ const relationsLoading = ref(true);
 const statusUpdating = ref(false);
 const statusError = ref("");
 const statusReason = ref("");
-
-const priorityColor: Record<string, string> = {
-  INFORMATIONAL: "bg-slate-700/50 text-slate-300",
-  LOW: "bg-emerald-500/15 text-emerald-400",
-  MEDIUM: "bg-amber-500/15 text-amber-400",
-  HIGH: "bg-orange-500/15 text-orange-400",
-  CRITICAL: "bg-red-500/15 text-red-400",
-};
-const severityColor: Record<string, string> = {
-  INFO: "bg-slate-700/50 text-slate-300",
-  LOW: "bg-emerald-500/15 text-emerald-400",
-  MEDIUM: "bg-amber-500/15 text-amber-400",
-  HIGH: "bg-orange-500/15 text-orange-400",
-  CRITICAL: "bg-red-500/15 text-red-400",
-};
-const statusColor: Record<FindingStatus, string> = {
-  NEW: "bg-slate-700/50 text-slate-300",
-  CONFIRMED: "bg-sky-500/15 text-sky-400",
-  IN_REVIEW: "bg-amber-500/15 text-amber-400",
-  ACCEPTED_RISK: "bg-purple-500/15 text-purple-400",
-  FALSE_POSITIVE: "bg-slate-700/50 text-slate-500",
-  REMEDIATED: "bg-emerald-500/15 text-emerald-400",
-  REOPENED: "bg-red-500/15 text-red-400",
-};
 
 const nextStatuses = computed(() => (finding.value ? VALID_TRANSITIONS[finding.value.status] : []));
 
@@ -155,7 +92,7 @@ async function loadAll() {
 async function loadHistory() {
   historyLoading.value = true;
   try {
-    history.value = await apiFetch<StatusHistoryEntry[]>(`/api/findings/${findingId}/history`);
+    history.value = await apiFetch<FindingStatusHistoryEntry[]>(`/api/findings/${findingId}/history`);
   } finally {
     historyLoading.value = false;
   }
@@ -198,15 +135,16 @@ onMounted(() => {
   <div>
     <PageHeader :title="finding?.title || 'Finding'" :subtitle="finding ? `${finding.source_tool} · ${finding.target}` : ''" />
 
-    <div v-if="loading" class="px-8 py-6 text-sm text-slate-600">Loading…</div>
-    <div v-else-if="loadError" class="px-8 py-6 text-sm text-red-400">{{ loadError }}</div>
+    <div v-if="loading" class="px-8 py-6"><LoadingState /></div>
+    <div v-else-if="loadError" class="px-8 py-6 text-sm text-red-400">
+      <p>{{ loadError }}</p>
+      <button class="mt-2 text-xs text-emerald-400 hover:underline" @click="loadAll">Retry</button>
+    </div>
 
     <div v-else-if="finding && risk" class="space-y-6 px-8 py-6">
       <div class="flex flex-wrap items-center gap-3">
-        <span class="rounded px-2 py-0.5 text-xs" :class="severityColor[finding.severity]">{{ finding.severity }}</span>
-        <span class="rounded px-2 py-0.5 text-xs font-medium" :class="statusColor[finding.status]">
-          {{ finding.status.replace("_", " ") }}
-        </span>
+        <SeverityBadge :severity="finding.severity" />
+        <StatusBadge :status="finding.status" bold>{{ finding.status.replace("_", " ") }}</StatusBadge>
         <span class="text-xs text-slate-500">Confidence: {{ finding.confidence }}</span>
         <NuxtLink :to="`/scans/${finding.job_id}`" class="ml-auto text-xs text-emerald-400 hover:underline">
           View source scan →
@@ -287,13 +225,13 @@ onMounted(() => {
           <div class="flex items-center gap-3">
             <span
               class="flex h-16 w-16 items-center justify-center rounded-full text-2xl font-bold"
-              :class="priorityColor[risk.priority]"
+              :class="RISK_PRIORITY_COLORS[risk.priority]"
             >
               {{ risk.score }}
             </span>
             <div>
               <p class="text-xs text-slate-500">Risk Score / 100</p>
-              <p class="text-lg font-semibold" :class="priorityColor[risk.priority].split(' ')[1]">{{ risk.priority }}</p>
+              <p class="text-lg font-semibold" :class="RISK_PRIORITY_COLORS[risk.priority].split(' ')[1]">{{ risk.priority }}</p>
             </div>
           </div>
 

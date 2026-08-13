@@ -102,7 +102,7 @@ onMounted(loadProjects);
 
 <template>
   <div>
-    <PageHeader title="Projects" subtitle="Group targets, scans, findings, and reports into independent workspaces" />
+    <PageHeader title="Projects" subtitle="Group assets, scans, findings, and reports into independent workspaces" />
 
     <div class="px-8 py-6">
       <div class="mb-4 flex flex-wrap items-center gap-2">
@@ -183,7 +183,7 @@ onMounted(loadProjects);
           <p v-if="project.description" class="mt-1 text-xs text-slate-500">{{ project.description }}</p>
 
           <div class="mt-3 grid grid-cols-4 gap-1 text-center text-xs text-slate-500">
-            <div><span class="block text-sm font-medium text-slate-300">{{ project.target_count }}</span>targets</div>
+            <div><span class="block text-sm font-medium text-slate-300">{{ project.target_count }}</span>assets</div>
             <div><span class="block text-sm font-medium text-slate-300">{{ project.job_count }}</span>jobs</div>
             <div><span class="block text-sm font-medium text-slate-300">{{ project.finding_count }}</span>findings</div>
             <div><span class="block text-sm font-medium text-slate-300">{{ project.lab_count }}</span>labs</div>

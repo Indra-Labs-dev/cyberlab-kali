@@ -1,42 +1,10 @@
 <script setup lang="ts">
-type FindingStatus = "NEW" | "CONFIRMED" | "IN_REVIEW" | "ACCEPTED_RISK" | "FALSE_POSITIVE" | "REMEDIATED" | "REOPENED";
-
-interface Finding {
-  id: string;
-  job_id: string;
-  target: string;
-  source_tool: string;
-  title: string;
-  description: string;
-  severity: "INFO" | "LOW" | "MEDIUM" | "HIGH" | "CRITICAL";
-  confidence: string;
-  recommendation: string | null;
-  created_at: string;
-  cve_ids: string[];
-  cvss_score: number | null;
-  epss_score: number | null;
-  kev: boolean | null;
-  risk_score: number | null;
-  risk_priority: "INFORMATIONAL" | "LOW" | "MEDIUM" | "HIGH" | "CRITICAL" | null;
-  // Phase 16 -- deduplication/lifecycle.
-  status: FindingStatus;
-  observation_count: number;
-  source_tools: string[];
-}
+import { RISK_PRIORITY_COLORS } from "~/constants/colors";
+import type { Finding, FindingStatus } from "~/types/finding";
 
 const PRIORITIES = ["INFORMATIONAL", "LOW", "MEDIUM", "HIGH", "CRITICAL"] as const;
 const STATUSES: FindingStatus[] = ["NEW", "CONFIRMED", "IN_REVIEW", "ACCEPTED_RISK", "FALSE_POSITIVE", "REMEDIATED", "REOPENED"];
 const SOURCE_TOOLS = ["nmap", "masscan", "whatweb", "nuclei", "sslscan", "gobuster", "searchsploit", "nikto"];
-
-const statusColor: Record<FindingStatus, string> = {
-  NEW: "bg-slate-700/50 text-slate-300",
-  CONFIRMED: "bg-sky-500/15 text-sky-400",
-  IN_REVIEW: "bg-amber-500/15 text-amber-400",
-  ACCEPTED_RISK: "bg-purple-500/15 text-purple-400",
-  FALSE_POSITIVE: "bg-slate-700/50 text-slate-500 line-through",
-  REMEDIATED: "bg-emerald-500/15 text-emerald-400",
-  REOPENED: "bg-red-500/15 text-red-400",
-};
 
 const { apiFetch } = useApi();
 
@@ -53,21 +21,6 @@ const minRiskScore = ref<string>("");
 const statusFilter = ref<string>("");
 const sourceToolFilter = ref<string>("");
 const sortBy = ref<"created_at_desc" | "risk_score_desc" | "risk_score_asc">("created_at_desc");
-
-const severityColor: Record<string, string> = {
-  INFO: "bg-slate-700/50 text-slate-300",
-  LOW: "bg-emerald-500/15 text-emerald-400",
-  MEDIUM: "bg-amber-500/15 text-amber-400",
-  HIGH: "bg-orange-500/15 text-orange-400",
-  CRITICAL: "bg-red-500/15 text-red-400",
-};
-const priorityColor: Record<string, string> = {
-  INFORMATIONAL: "bg-slate-700/50 text-slate-300",
-  LOW: "bg-emerald-500/15 text-emerald-400",
-  MEDIUM: "bg-amber-500/15 text-amber-400",
-  HIGH: "bg-orange-500/15 text-orange-400",
-  CRITICAL: "bg-red-500/15 text-red-400",
-};
 
 function formatPercent(value: number | null): string {
   return value === null ? "N/A" : `${(value * 100).toFixed(1)}%`;
@@ -117,8 +70,8 @@ onMounted(() => {
     <div class="px-8 py-6">
       <div class="mb-6 rounded-lg border border-slate-800 bg-slate-900/40 p-4">
         <h2 class="mb-3 text-sm font-semibold text-slate-300">Top Risks</h2>
-        <p v-if="topRisksLoading" class="text-sm text-slate-600">Loading…</p>
-        <p v-else-if="topRisks.length === 0" class="text-sm text-slate-600">No scored findings yet.</p>
+        <LoadingState v-if="topRisksLoading" />
+        <EmptyState v-else-if="topRisks.length === 0" message="No scored findings yet." />
         <div v-else class="space-y-2">
           <NuxtLink
             v-for="f in topRisks"
@@ -128,15 +81,13 @@ onMounted(() => {
           >
             <span
               class="flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-sm font-bold"
-              :class="priorityColor[f.risk_priority || 'INFORMATIONAL']"
+              :class="RISK_PRIORITY_COLORS[f.risk_priority || 'INFORMATIONAL']"
             >
               {{ f.risk_score ?? "—" }}
             </span>
             <div class="min-w-0 flex-1">
               <div class="flex items-center gap-2">
-                <span class="rounded px-1.5 py-0.5 text-xs" :class="priorityColor[f.risk_priority || 'INFORMATIONAL']">
-                  {{ f.risk_priority || "UNSCORED" }}
-                </span>
+                <RiskBadge :priority="f.risk_priority || 'INFORMATIONAL'" size="sm">{{ f.risk_priority || "UNSCORED" }}</RiskBadge>
                 <span class="truncate font-medium text-slate-200">{{ f.title }}</span>
               </div>
               <p class="mt-1 truncate text-xs text-slate-500">
@@ -198,11 +149,12 @@ onMounted(() => {
         </select>
       </div>
 
-      <p v-if="loading" class="text-sm text-slate-600">Loading…</p>
-      <p v-else-if="error" class="text-sm text-red-400">{{ error }}</p>
-      <p v-else-if="findings.length === 0" class="text-sm text-slate-600">
-        No findings match these filters.
-      </p>
+      <LoadingState v-if="loading" />
+      <div v-else-if="error" class="text-sm text-red-400">
+        <p>{{ error }}</p>
+        <button class="mt-2 text-xs text-emerald-400 hover:underline" @click="loadFindings">Retry</button>
+      </div>
+      <EmptyState v-else-if="findings.length === 0" message="No findings match these filters." />
 
       <div v-else class="space-y-2">
         <NuxtLink
@@ -214,22 +166,14 @@ onMounted(() => {
           <div class="flex items-start justify-between gap-3">
             <div class="min-w-0 flex-1">
               <div class="flex flex-wrap items-center gap-2">
-                <span class="rounded px-2 py-0.5 text-xs font-medium" :class="severityColor[finding.severity]">
-                  {{ finding.severity }}
-                </span>
-                <span
-                  v-if="finding.risk_priority"
-                  class="rounded px-2 py-0.5 text-xs font-medium"
-                  :class="priorityColor[finding.risk_priority]"
-                >
+                <SeverityBadge :severity="finding.severity" bold />
+                <RiskBadge v-if="finding.risk_priority" :priority="finding.risk_priority" bold>
                   Risk {{ finding.risk_score }} · {{ finding.risk_priority }}
-                </span>
+                </RiskBadge>
                 <span v-if="finding.kev === true" class="rounded bg-red-500/15 px-2 py-0.5 text-xs font-medium text-red-400">
                   KEV
                 </span>
-                <span class="rounded px-2 py-0.5 text-xs font-medium" :class="statusColor[finding.status]">
-                  {{ finding.status.replace("_", " ") }}
-                </span>
+                <StatusBadge :status="finding.status" bold strike-false-positive>{{ finding.status.replace("_", " ") }}</StatusBadge>
                 <span class="font-medium text-slate-200">{{ finding.title }}</span>
               </div>
               <p class="mt-1 text-xs text-slate-500">

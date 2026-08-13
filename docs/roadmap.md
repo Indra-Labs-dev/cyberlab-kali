@@ -159,6 +159,48 @@ CyberLab Risk Score = f(CVSS, EPSS, KEV, criticité asset, confiance du finding)
 
 ---
 
+## 5bis. Chantier transversal — Frontend Architecture & UX (18a–18e)
+
+> **Ceci n'est pas une phase numérotée de la roadmap officielle.** La
+> numérotation ci-dessus (13 → 22) reste inchangée ; ce chantier a été
+> mené entre la fin de la Phase 17 et le début de la Phase 18 officielle,
+> et documenté ici pour que l'historique reste compréhensible sans créer
+> de confusion avec la vraie Phase 18 (Agents spécialisés IA, section 6
+> ci-dessous — **non commencée**).
+
+**Objectif** : traiter la dette d'architecture/UX frontend accumulée sur
+les Phases 13–17 (color-maps dupliquées, états loading/empty ad hoc,
+navigation plate, page Asset de 895 lignes) avant que les Agents IA de la
+Phase 18 n'ajoutent encore de la surface au frontend. Aucun changement
+backend/API/schéma DB dans ce chantier.
+
+Sous-étapes (référencées telles quelles dans `CHANGELOG.md`, section
+*"Cross-cutting — Frontend Architecture & UX (18a–18e)"*) :
+
+- **18a** — types partagés (miroir exact des schémas backend), design
+  system centralisé (badges, color-maps par domaine), `LoadingState`/
+  `EmptyState`, composables `useAssets()`/`useProjects()`, mise en place
+  de Vitest.
+- **18b** — navigation hiérarchisée (Attack Surface / Execution & Support),
+  renommage `/targets` → `/assets` avec redirections legacy
+  `/targets`→`/assets` et `/targets/:id`→`/assets/:id` conservées.
+- **18c** — `/graph` (Security Graph global) et `/intelligence` comme
+  pages réelles.
+- **18d** — découpage de la page Asset (895 → 275 lignes) en composants
+  dédiés (`AssetHeader`, `AssetContinuousRecon`, `AssetChangeTimeline`,
+  `AssetRiskOverview`, `AssetFindingsList`).
+- **18e** — consolidation : audit et correction des duplications
+  restantes, accessibilité, vocabulaire Assets/Targets, suppression de
+  code mort (`ComingSoon.vue`).
+
+**Résultat vérifié** : 68 tests verts, build et Docker validés,
+vérification navigateur réelle (desktop + mobile) sur toutes les routes,
+26 erreurs TypeScript préexistantes dans `tools/index.vue` confirmées
+comme dette antérieure (non introduites, non masquées). Aucun agent IA
+n'a été implémenté à l'occasion de ce chantier.
+
+---
+
 ## 6. Track B — Évolution du copilote IA
 
 ### Phase 18 — Agents spécialisés (dans le Policy Engine existant)
