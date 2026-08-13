@@ -1,4 +1,7 @@
+import base64
 import json
+
+import pytest
 
 from app.reports.renderers import render
 
@@ -18,6 +21,7 @@ SAMPLE_DATA = {
             "finished_at": "2026-08-10T00:00:02+00:00",
             "exit_code": 0,
             "ai_analysis": {"risk": "INFO", "summary": "Nothing notable."},
+            "evidence_sha256": "a" * 64,
         }
     ],
     "findings": [
@@ -107,3 +111,66 @@ def test_render_unknown_format_raises():
 
     with pytest.raises(ValueError):
         render("xml", SAMPLE_DATA)
+
+
+# --- Phase 22: report templates (executive / technical / evidence_package) ---
+
+
+def test_default_template_is_technical_and_unchanged():
+    for fmt in ["html", "markdown"]:
+        content, _ = render(fmt, SAMPLE_DATA)
+        content_explicit, _ = render(fmt, SAMPLE_DATA, "technical")
+        assert content == content_explicit
+        assert "Nothing notable" in content  # AI analysis / timeline still present
+
+
+@pytest.mark.parametrize("fmt", ["html", "markdown"])
+def test_executive_template_omits_description_and_timeline(fmt):
+    content, _ = render(fmt, SAMPLE_DATA, "executive")
+    assert "Port 80 is open." not in content  # finding description dropped
+    assert "Nothing notable" not in content  # AI analysis / timeline section dropped
+    assert "Open port 80/tcp" in content  # title + severity still present
+
+
+@pytest.mark.parametrize("fmt", ["html", "markdown", "json"])
+def test_evidence_package_template_includes_hash_and_evidence(fmt):
+    content, _ = render(fmt, SAMPLE_DATA, "evidence_package")
+    assert "a" * 64 in content  # evidence_sha256
+    assert "80" in content  # finding.evidence == {"port": 80}
+
+
+def test_json_renderer_ignores_template_and_always_full_dump():
+    content_technical, _ = render("json", SAMPLE_DATA, "technical")
+    content_executive, _ = render("json", SAMPLE_DATA, "executive")
+    content_evidence, _ = render("json", SAMPLE_DATA, "evidence_package")
+    assert content_technical == content_executive == content_evidence
+
+
+def test_render_html_evidence_package_escapes_malicious_finding_evidence():
+    malicious_data = json.loads(json.dumps(SAMPLE_DATA))
+    malicious_data["findings"][0]["evidence"] = {"raw": "<script>alert(document.cookie)</script>"}
+
+    content, _ = render("html", malicious_data, "evidence_package")
+
+    assert "<script>alert(document.cookie)</script>" not in content
+    assert "&lt;script&gt;" in content
+
+
+def test_render_pdf_evidence_package_does_not_crash_on_markup_like_evidence():
+    malicious_data = json.loads(json.dumps(SAMPLE_DATA))
+    malicious_data["findings"][0]["evidence"] = {"raw": "<font color='white'>hidden</font> <unclosed"}
+
+    content, is_binary = render("pdf", malicious_data, "evidence_package")
+    assert is_binary is True
+    raw = base64.b64decode(content)
+    assert raw[:4] == b"%PDF"
+
+
+def test_render_pdf_executive_template_does_not_crash():
+    # PDF stream content is compressed by reportlab, so unlike html/markdown
+    # this can't assert on presence/absence of specific text -- just that the
+    # executive code path (skipping description/timeline sections) is valid.
+    content, is_binary = render("pdf", SAMPLE_DATA, "executive")
+    assert is_binary is True
+    raw = base64.b64decode(content)
+    assert raw[:4] == b"%PDF"

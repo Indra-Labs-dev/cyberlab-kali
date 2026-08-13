@@ -50,6 +50,7 @@ async def build_report_data(db: AsyncSession, job_ids: list[uuid.UUID], title: s
                 "finished_at": job.finished_at.isoformat() if job.finished_at else None,
                 "exit_code": job.exit_code,
                 "ai_analysis": job.ai_analysis,
+                "evidence_sha256": job.evidence_sha256,
             }
             for job in jobs
         ],

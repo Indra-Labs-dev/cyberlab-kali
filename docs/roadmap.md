@@ -285,6 +285,8 @@ nuclei (quick_scan, filtré sur les tags pertinents)
 
 **Complexité** : S/M.
 
+**Résultat réel** : livré. Deux volets indépendants, tous deux additifs sur des fondations déjà existantes. Reports 2.0 : trois `ReportTemplate` (`executive`/`technical`/`evidence_package`) au-dessus du moteur de rendu Phase 9 inchangé — `technical` reproduit exactement le contenu déjà livré (valeur par défaut, non-régression vérifiée octet-à-octet), `executive` condense (retire description/recommandation/timeline), `evidence_package` surface pour la première fois `finding.evidence` et `Job.evidence_sha256` (Phase 20) qui existaient déjà dans les données mais n'étaient rendus par aucun format. JSON ignore délibérément `template` (export à fidélité complète, pas une vue). Pentest Workspace : la timeline demandée était déjà livrée par la Phase 20 (onglet `timeline` existant sur la page Project, non mentionné dans le texte original de cette section) — seul un onglet Notes (texte libre par projet, `Project.notes`) restait à construire, sur la route `PATCH /api/projects/{id}` déjà existante. Vérifié en conditions réelles (Docker + navigateur) : rapport Evidence Package généré contre un job réel affichant le hash et l'evidence réels, rapport Executive confirmé sans description ni timeline, notes de projet confirmées persistantes après rechargement complet — voir [phase-22-reports-2-pentest-workspace.md](phase-22-reports-2-pentest-workspace.md) pour l'architecture complète et l'audit de sécurité.
+
 ---
 
 ## 8. Pistes à horizon plus lointain (gardées, mais reformulées)

@@ -37,6 +37,8 @@ _TEMPLATE = Template(
   table { border-collapse: collapse; width: 100%; margin: 1rem 0; }
   th, td { text-align: left; padding: 0.4rem 0.6rem; border-bottom: 1px solid #e2e8f0; font-size: 0.85rem; }
   code { background: #f1f5f9; padding: 0.1rem 0.3rem; border-radius: 3px; }
+  pre.evidence { background: #f1f5f9; border-radius: 6px; padding: 0.6rem; margin-top: 0.5rem;
+                 font-size: 0.78rem; white-space: pre-wrap; word-break: break-word; }
 </style>
 </head>
 <body>
@@ -66,21 +68,31 @@ _TEMPLATE = Template(
     <span class="badge" style="background:{{ colors.get(f.severity, '#64748b') }}">{{ f.severity }}</span>
     <strong>{{ f.title }}</strong>
     <div class="finding-meta">Target: <code>{{ f.target }}</code> · Source: {{ f.source_tool }} · Confidence: {{ f.confidence }}</div>
+    {% if template != 'executive' %}
     <p>{{ f.description }}</p>
     {% if f.recommendation %}<div class="recommendation">{{ f.recommendation }}</div>{% endif %}
+    {% endif %}
+    {% if template == 'evidence_package' and f.evidence %}
+    <pre class="evidence">{{ f.evidence }}</pre>
+    {% endif %}
   </div>
   {% endfor %}
 
+  {% if template != 'executive' %}
   <h2>Timeline &amp; AI Analysis</h2>
   {% for job in data.jobs %}
   <div class="finding">
     <strong>{{ job.tool }} → {{ job.target }}</strong> ({{ job.status }})
     <div class="finding-meta">Created: {{ job.created_at }} · Started: {{ job.started_at }} · Finished: {{ job.finished_at }}</div>
+    {% if template == 'evidence_package' %}
+    <div class="finding-meta">Evidence SHA-256: <code>{{ job.evidence_sha256 or "—" }}</code></div>
+    {% endif %}
     {% if job.ai_analysis %}
     <p><strong>AI risk assessment: {{ job.ai_analysis.risk }}</strong> — {{ job.ai_analysis.summary }}</p>
     {% endif %}
   </div>
   {% endfor %}
+  {% endif %}
 </body>
 </html>
 """,
@@ -88,5 +100,5 @@ _TEMPLATE = Template(
 )
 
 
-def render(data: dict) -> str:
-    return _TEMPLATE.render(data=data, colors=_SEVERITY_COLORS)
+def render(data: dict, template: str = "technical") -> str:
+    return _TEMPLATE.render(data=data, colors=_SEVERITY_COLORS, template=template)

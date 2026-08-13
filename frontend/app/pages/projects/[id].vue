@@ -7,6 +7,7 @@ interface ProjectSummary {
   id: string;
   name: string;
   description: string | null;
+  notes: string | null;
   status: "ACTIVE" | "ARCHIVED";
   created_at: string;
   updated_at: string;
@@ -45,13 +46,21 @@ interface ReportMeta {
   id: string;
   title: string;
   format: string;
+  template: string;
   job_ids: string[];
   created_at: string;
 }
 
+const TEMPLATE_LABELS: Record<string, string> = {
+  executive: "Executive",
+  technical: "Technical",
+  evidence_package: "Evidence Package",
+};
+
 const route = useRoute();
 const { apiFetch, downloadUrl } = useApi();
 const { listAssets } = useAssets();
+const { updateProject } = useProjects();
 const { getProjectSummary, regenerateProjectSummary } = useProjectMemory();
 const projectId = route.params.id as string;
 
@@ -62,9 +71,9 @@ const findings = ref<Finding[]>([]);
 const labs = ref<LabInstance[]>([]);
 const reports = ref<ReportMeta[]>([]);
 const loading = ref(true);
-const tab = ref<"overview" | "assets" | "scans" | "findings" | "timeline" | "labs" | "ai" | "reports" | "graph">(
-  "overview",
-);
+const tab = ref<
+  "overview" | "assets" | "scans" | "findings" | "timeline" | "labs" | "ai" | "reports" | "graph" | "notes"
+>("overview");
 
 async function loadAll() {
   loading.value = true;
@@ -170,6 +179,32 @@ async function askAboutProject() {
   }
 }
 
+// --- Notes (Phase 22) ---
+const notesDraft = ref("");
+const savingNotes = ref(false);
+const notesError = ref("");
+const notesSaved = ref(false);
+
+watch(project, (value) => {
+  if (value) notesDraft.value = value.notes || "";
+});
+
+async function saveNotes() {
+  if (!project.value) return;
+  savingNotes.value = true;
+  notesError.value = "";
+  notesSaved.value = false;
+  try {
+    const updated = await updateProject(projectId, { notes: notesDraft.value });
+    project.value = { ...project.value, notes: updated.notes };
+    notesSaved.value = true;
+  } catch (err: any) {
+    notesError.value = err?.data?.detail || "Failed to save notes";
+  } finally {
+    savingNotes.value = false;
+  }
+}
+
 onMounted(async () => {
   await loadAll();
   await loadLabs();
@@ -185,7 +220,7 @@ onMounted(async () => {
     <div v-else-if="project">
       <div class="flex gap-1 border-b border-slate-800 px-8">
         <button
-          v-for="t in ['overview', 'assets', 'scans', 'findings', 'timeline', 'labs', 'ai', 'reports', 'graph']"
+          v-for="t in ['overview', 'assets', 'scans', 'findings', 'timeline', 'labs', 'ai', 'reports', 'graph', 'notes']"
           :key="t"
           class="border-b-2 px-3 py-2 text-sm capitalize transition-colors"
           :class="tab === t ? 'border-emerald-500 text-emerald-400' : 'border-transparent text-slate-500 hover:text-slate-300'"
@@ -362,7 +397,10 @@ onMounted(async () => {
           <div v-for="r in reports" :key="r.id" class="flex items-center justify-between rounded-lg border border-slate-800 bg-slate-900/40 p-3">
             <div>
               <p class="text-sm text-slate-200">{{ r.title }}</p>
-              <p class="text-xs text-slate-500">{{ r.format.toUpperCase() }} · {{ formatDate(r.created_at) }}</p>
+              <p class="text-xs text-slate-500">
+                {{ r.format.toUpperCase() }} · {{ TEMPLATE_LABELS[r.template] || r.template }} ·
+                {{ formatDate(r.created_at) }}
+              </p>
             </div>
             <a :href="downloadUrl(`/api/reports/${r.id}/download`)" class="rounded-md border border-slate-700 px-2.5 py-1 text-xs text-slate-300 hover:bg-slate-800">
               Download
@@ -373,6 +411,29 @@ onMounted(async () => {
 
       <div v-else-if="tab === 'graph'" class="px-8 py-6">
         <SecurityGraph :base-url="`/api/graph/projects/${projectId}`" />
+      </div>
+
+      <!-- Notes (Phase 22) -->
+      <div v-else-if="tab === 'notes'" class="px-8 py-6">
+        <p class="mb-3 text-xs text-slate-500">Free-form notes for this project — visible only here, not part of any generated report.</p>
+        <textarea
+          v-model="notesDraft"
+          rows="14"
+          placeholder="Client contacts, scope caveats, findings still to triage…"
+          class="w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-200 placeholder:text-slate-600"
+          @input="notesSaved = false"
+        ></textarea>
+        <div class="mt-3 flex items-center gap-3">
+          <button
+            class="rounded-md bg-emerald-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-emerald-500 disabled:opacity-50"
+            :disabled="savingNotes"
+            @click="saveNotes"
+          >
+            {{ savingNotes ? "Saving…" : "Save notes" }}
+          </button>
+          <span v-if="notesSaved" class="text-xs text-emerald-400">Saved.</span>
+          <span v-if="notesError" class="text-xs text-red-400">{{ notesError }}</span>
+        </div>
       </div>
     </div>
   </div>

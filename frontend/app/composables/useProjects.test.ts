@@ -23,4 +23,18 @@ describe("useProjects", () => {
     const result = await useProjects().listProjects();
     expect(result).toEqual([{ id: "p1", name: "Phase 16 E2E" }]);
   });
+
+  it("updateProject() PATCHes the given fields", async () => {
+    await useProjects().updateProject("p1", { notes: "Kickoff notes" });
+    expect(apiFetchMock).toHaveBeenCalledWith("/api/projects/p1", {
+      method: "PATCH",
+      body: { notes: "Kickoff notes" },
+    });
+  });
+
+  it("updateProject() returns the updated project", async () => {
+    apiFetchMock.mockResolvedValue({ id: "p1", name: "Phase 22", notes: "updated" });
+    const result = await useProjects().updateProject("p1", { notes: "updated" });
+    expect(result).toEqual({ id: "p1", name: "Phase 22", notes: "updated" });
+  });
 });

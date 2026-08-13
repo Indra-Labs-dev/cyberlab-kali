@@ -11,9 +11,16 @@ interface ReportMeta {
   id: string;
   title: string;
   format: string;
+  template: string;
   job_ids: string[];
   created_at: string;
 }
+
+const TEMPLATE_LABELS: Record<string, string> = {
+  executive: "Executive",
+  technical: "Technical",
+  evidence_package: "Evidence Package",
+};
 
 const { apiFetch, downloadUrl } = useApi();
 
@@ -22,6 +29,7 @@ const reports = ref<ReportMeta[]>([]);
 const selectedJobIds = ref<Set<string>>(new Set());
 const title = ref("CyberLab Assessment Report");
 const format = ref<"html" | "markdown" | "json" | "pdf">("html");
+const template = ref<"executive" | "technical" | "evidence_package">("technical");
 const generating = ref(false);
 const generateError = ref("");
 const loading = ref(true);
@@ -52,7 +60,12 @@ async function generateReport() {
   try {
     await apiFetch("/api/reports", {
       method: "POST",
-      body: { title: title.value, job_ids: Array.from(selectedJobIds.value), format: format.value },
+      body: {
+        title: title.value,
+        job_ids: Array.from(selectedJobIds.value),
+        format: format.value,
+        template: template.value,
+      },
     });
     selectedJobIds.value = new Set();
     await loadAll();
@@ -96,6 +109,16 @@ onMounted(loadAll);
           <option value="pdf">PDF</option>
         </select>
 
+        <label class="mb-1 block text-xs text-slate-500">Template</label>
+        <select
+          v-model="template"
+          class="mb-3 w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-1.5 text-sm text-slate-200"
+        >
+          <option value="executive">Executive — condensed, no raw evidence</option>
+          <option value="technical">Technical — full findings, jobs &amp; AI analysis</option>
+          <option value="evidence_package">Evidence Package — chain of custody, raw evidence</option>
+        </select>
+
         <label class="mb-1 block text-xs text-slate-500">Scans to include</label>
         <div class="mb-3 max-h-56 space-y-1 overflow-y-auto rounded-md border border-slate-800 p-2">
           <p v-if="completedJobs.length === 0" class="text-xs text-slate-600">No completed scans yet.</p>
@@ -133,8 +156,8 @@ onMounted(loadAll);
             <div>
               <p class="text-sm font-medium text-slate-200">{{ report.title }}</p>
               <p class="text-xs text-slate-500">
-                {{ report.format.toUpperCase() }} · {{ report.job_ids.length }} scan(s) ·
-                {{ new Date(report.created_at).toLocaleString() }}
+                {{ report.format.toUpperCase() }} · {{ TEMPLATE_LABELS[report.template] || report.template }} ·
+                {{ report.job_ids.length }} scan(s) · {{ new Date(report.created_at).toLocaleString() }}
               </p>
             </div>
             <a

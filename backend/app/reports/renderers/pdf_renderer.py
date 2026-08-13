@@ -23,7 +23,7 @@ _SEVERITY_COLORS = {
 }
 
 
-def render(data: dict) -> bytes:
+def render(data: dict, template: str = "technical") -> bytes:
     buffer = io.BytesIO()
     doc = SimpleDocTemplate(buffer, pagesize=letter, topMargin=0.75 * inch, bottomMargin=0.75 * inch)
     styles = getSampleStyleSheet()
@@ -67,25 +67,33 @@ def render(data: dict) -> bytes:
             )
         )
         story.append(Paragraph(f"Target: {_esc(f['target'])} · Source: {_esc(f['source_tool'])}", styles["Normal"]))
-        story.append(Paragraph(_esc(f["description"]), styles["Normal"]))
-        if f["recommendation"]:
-            story.append(Paragraph(f"<b>Recommendation:</b> {_esc(f['recommendation'])}", styles["Normal"]))
+        if template != "executive":
+            story.append(Paragraph(_esc(f["description"]), styles["Normal"]))
+            if f["recommendation"]:
+                story.append(Paragraph(f"<b>Recommendation:</b> {_esc(f['recommendation'])}", styles["Normal"]))
+        if template == "evidence_package" and f["evidence"]:
+            story.append(Paragraph(f"<b>Evidence:</b> {_esc(str(f['evidence']))}", styles["Normal"]))
 
-    story.append(Spacer(1, 0.2 * inch))
-    story.append(Paragraph("Timeline &amp; AI Analysis", styles["Heading2"]))
-    for job in data["jobs"]:
-        story.append(
-            Paragraph(f"<b>{_esc(job['tool'])} → {_esc(job['target'])}</b> ({_esc(job['status'])})", styles["Normal"])
-        )
-        if job["ai_analysis"]:
-            ai = job["ai_analysis"]
+    if template != "executive":
+        story.append(Spacer(1, 0.2 * inch))
+        story.append(Paragraph("Timeline &amp; AI Analysis", styles["Heading2"]))
+        for job in data["jobs"]:
             story.append(
                 Paragraph(
-                    f"AI risk: <b>{_esc(str(ai.get('risk', 'N/A')))}</b> — {_esc(str(ai.get('summary', '')))}",
-                    styles["Normal"],
+                    f"<b>{_esc(job['tool'])} → {_esc(job['target'])}</b> ({_esc(job['status'])})", styles["Normal"]
                 )
             )
-        story.append(Spacer(1, 0.05 * inch))
+            if template == "evidence_package":
+                story.append(Paragraph(f"Evidence SHA-256: {_esc(job['evidence_sha256'] or '—')}", styles["Normal"]))
+            if job["ai_analysis"]:
+                ai = job["ai_analysis"]
+                story.append(
+                    Paragraph(
+                        f"AI risk: <b>{_esc(str(ai.get('risk', 'N/A')))}</b> — {_esc(str(ai.get('summary', '')))}",
+                        styles["Normal"],
+                    )
+                )
+            story.append(Spacer(1, 0.05 * inch))
 
     doc.build(story)
     return buffer.getvalue()

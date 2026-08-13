@@ -15,6 +15,7 @@ class ProjectUpdateRequest(BaseModel):
     name: str | None = None
     description: str | None = None
     status: ProjectStatus | None = None
+    notes: str | None = None
 
 
 class ProjectResponse(BaseModel):
@@ -23,6 +24,7 @@ class ProjectResponse(BaseModel):
     id: uuid.UUID
     name: str
     description: str | None
+    notes: str | None
     status: ProjectStatus
     created_at: datetime
     updated_at: datetime

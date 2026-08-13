@@ -1,5 +1,38 @@
 # Changelog
 
+## Unreleased — Phase 22 — Reports 2.0 & Pentest Workspace
+
+Dernière phase de la roadmap actuelle. Deux volets additifs, aucune réécriture de moteur existant. Voir [docs/phase-22-reports-2-pentest-workspace.md](docs/phase-22-reports-2-pentest-workspace.md) pour l'architecture complète.
+
+- **`ReportTemplate`** (`executive`/`technical`/`evidence_package`) au-dessus du
+  moteur de rendu Phase 9 inchangé — `Report.template`, orthogonal au
+  `format` déjà existant. `technical` (défaut) reproduit exactement le
+  contenu déjà livré, vérifié octet-à-octet non régressif. `executive`
+  retire description/recommandation par finding et toute la section
+  Timeline & AI Analysis. `evidence_package` surface pour la première fois
+  `finding.evidence` (existait déjà dans `build_report_data()` depuis la
+  Phase 9, jamais rendu avant cette phase) et `Job.evidence_sha256`
+  (Phase 20, désormais inclus dans le dict du builder -- seul ajout
+  additif au builder lui-même). JSON ignore délibérément `template`
+  (export à fidélité complète, pas une vue).
+- **`app/reports/builder.py::build_report_data()`** : un seul champ ajouté
+  (`evidence_sha256` par job), aucun champ retiré ni renommé.
+- **Onglet Notes** sur la page Project (`Project.notes`, texte libre) --
+  seul manque réel identifié dans le "Pentest Workspace" du brouillon
+  original, la timeline demandée était déjà livrée par la Phase 20.
+  Aucune nouvelle route : `PATCH /api/projects/{id}` était déjà générique
+  depuis la Phase 11, `notes` y transite automatiquement une fois ajouté
+  au schéma.
+- Migration `d4f6b1e8c9a7` (colonnes `reports.template` et
+  `projects.notes`). 34 nouveaux tests backend (593 au total, dont les
+  toutes premières routes `/api/reports` testées au niveau HTTP), 2
+  nouveaux tests frontend (125 au total).
+- Vérifié en conditions réelles (Docker + navigateur) : rapport Evidence
+  Package généré contre un job réel affichant le vrai hash et la vraie
+  evidence, rapport Executive confirmé sans description ni timeline,
+  notes de projet confirmées persistantes après rechargement complet de
+  la page.
+
 ## Unreleased — Phase 21 — Tool Orchestrator (chaînage de jobs)
 
 Chaînage **déterministe** de jobs (`nmap` → `whatweb` → `nuclei`, chaque

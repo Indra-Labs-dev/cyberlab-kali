@@ -29,11 +29,12 @@ async def create_report(request: ReportCreateRequest, db: AsyncSession = Depends
     except NoJobsFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 
-    content, _is_binary = render(request.format.value, data)
+    content, _is_binary = render(request.format.value, data, request.template.value)
 
     report = Report(
         title=request.title,
         format=request.format,
+        template=request.template,
         job_ids=[str(j) for j in request.job_ids],
         content=content,
     )

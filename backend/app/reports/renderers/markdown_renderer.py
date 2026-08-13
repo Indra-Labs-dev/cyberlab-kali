@@ -1,4 +1,4 @@
-def render(data: dict) -> str:
+def render(data: dict, template: str = "technical") -> str:
     lines = [f"# {data['title']}", "", f"_Generated {data['generated_at']}_", ""]
 
     lines += ["## Executive Summary", ""]
@@ -25,22 +25,31 @@ def render(data: dict) -> str:
         lines.append(f"- **Source:** {f['source_tool']}")
         lines.append(f"- **Confidence:** {f['confidence']}")
         lines.append("")
-        lines.append(f["description"])
-        if f["recommendation"]:
+        if template != "executive":
+            lines.append(f["description"])
+            if f["recommendation"]:
+                lines.append("")
+                lines.append(f"**Recommendation:** {f['recommendation']}")
             lines.append("")
-            lines.append(f"**Recommendation:** {f['recommendation']}")
-        lines.append("")
+        if template == "evidence_package" and f["evidence"]:
+            lines.append("**Evidence:**")
+            lines.append("")
+            lines.append(f"```\n{f['evidence']}\n```")
+            lines.append("")
     lines.append("")
 
-    lines += ["## Timeline & AI Analysis", ""]
-    for job in data["jobs"]:
-        lines.append(f"### {job['tool']} → {job['target']} ({job['status']})")
-        lines.append(f"- Created: {job['created_at']}")
-        lines.append(f"- Started: {job['started_at']}")
-        lines.append(f"- Finished: {job['finished_at']}")
-        if job["ai_analysis"]:
-            ai = job["ai_analysis"]
-            lines.append(f"- AI risk assessment: **{ai.get('risk', 'N/A')}** — {ai.get('summary', '')}")
-        lines.append("")
+    if template != "executive":
+        lines += ["## Timeline & AI Analysis", ""]
+        for job in data["jobs"]:
+            lines.append(f"### {job['tool']} → {job['target']} ({job['status']})")
+            lines.append(f"- Created: {job['created_at']}")
+            lines.append(f"- Started: {job['started_at']}")
+            lines.append(f"- Finished: {job['finished_at']}")
+            if template == "evidence_package":
+                lines.append(f"- Evidence SHA-256: `{job['evidence_sha256'] or '—'}`")
+            if job["ai_analysis"]:
+                ai = job["ai_analysis"]
+                lines.append(f"- AI risk assessment: **{ai.get('risk', 'N/A')}** — {ai.get('summary', '')}")
+            lines.append("")
 
     return "\n".join(lines)

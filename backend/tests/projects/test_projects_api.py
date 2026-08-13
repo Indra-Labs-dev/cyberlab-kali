@@ -128,3 +128,42 @@ async def test_create_target_under_nonexistent_project_404(client):
         json={"name": "orphan", "hostname": "10.0.0.1", "target_type": "IP"},
     )
     assert response.status_code == 404
+
+
+# --- Phase 22: project notes ---
+
+
+async def test_new_project_has_no_notes_by_default(client):
+    create = await client.post("/api/projects", json={"name": "Fresh Project"})
+    assert create.json()["notes"] is None
+
+
+async def test_update_project_notes(client):
+    create = await client.post("/api/projects", json={"name": "Notes Project"})
+    project_id = create.json()["id"]
+
+    response = await client.patch(f"/api/projects/{project_id}", json={"notes": "Kickoff call 2026-08-13 with client."})
+    assert response.status_code == 200
+    assert response.json()["notes"] == "Kickoff call 2026-08-13 with client."
+
+    get_response = await client.get(f"/api/projects/{project_id}")
+    assert get_response.json()["notes"] == "Kickoff call 2026-08-13 with client."
+
+
+async def test_clearing_project_notes_with_empty_string(client):
+    create = await client.post("/api/projects", json={"name": "Notes To Clear"})
+    project_id = create.json()["id"]
+    await client.patch(f"/api/projects/{project_id}", json={"notes": "temporary"})
+
+    response = await client.patch(f"/api/projects/{project_id}", json={"notes": ""})
+    assert response.status_code == 200
+    assert response.json()["notes"] == ""
+
+
+async def test_project_notes_are_isolated_per_project(client):
+    p1 = await client.post("/api/projects", json={"name": "Project One"})
+    p2 = await client.post("/api/projects", json={"name": "Project Two"})
+    await client.patch(f"/api/projects/{p1.json()['id']}", json={"notes": "secret to project one"})
+
+    other = await client.get(f"/api/projects/{p2.json()['id']}")
+    assert other.json()["notes"] is None
