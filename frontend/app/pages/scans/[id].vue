@@ -37,6 +37,7 @@ const jobId = route.params.id as string;
 
 const job = ref<Job | null>(null);
 const loading = ref(true);
+const loadError = ref("");
 const cancelling = ref(false);
 const analyzing = ref(false);
 const analyzeError = ref("");
@@ -63,8 +64,11 @@ async function analyzeWithAI() {
 }
 
 async function loadJob() {
+  loadError.value = "";
   try {
     job.value = await apiFetch<Job>(`/api/jobs/${jobId}`);
+  } catch (err: any) {
+    loadError.value = err?.data?.detail || "Failed to load this scan";
   } finally {
     loading.value = false;
   }
@@ -207,6 +211,11 @@ onMounted(loadJob);
         <h2 class="mb-2 text-sm font-semibold text-slate-300">stderr</h2>
         <pre class="max-h-96 overflow-auto whitespace-pre-wrap break-words text-xs text-red-400/80">{{ job.stderr }}</pre>
       </div>
+    </div>
+
+    <div v-else class="px-8 py-6 text-sm text-red-400">
+      <p>{{ loadError || "Failed to load this scan." }}</p>
+      <button class="mt-2 text-xs text-emerald-400 hover:underline" @click="loadJob">Retry</button>
     </div>
   </div>
 </template>

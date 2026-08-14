@@ -5,6 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.rate_limit import job_creation_limit
 from app.db.session import get_db
 from app.jobs.pubsub import publish_job_update
 from app.jobs.queue import get_queue
@@ -13,20 +14,20 @@ from app.jobs.tasks import execute_job
 from app.models.job import Job, JobStatus
 from app.models.target import Target
 from app.schemas.job import JobCreateRequest, JobResponse
-from app.targets.authorization import is_executable
+from app.targets.authorization import infer_default_authorization, is_executable, is_status_executable
 from app.tools import registry
 
 router = APIRouter(prefix="/jobs", tags=["jobs"])
 
 
-@router.post("", response_model=JobResponse, status_code=201)
+@router.post("", response_model=JobResponse, status_code=201, dependencies=[Depends(job_creation_limit)])
 async def create_job(request: JobCreateRequest, db: AsyncSession = Depends(get_db)) -> Job:
     project_id = None
     target_id = None
     target_address = request.target
 
     if request.target_id is not None:
-        # This is the ONLY enforcement point for target authorization —
+        # This is the primary enforcement point for target authorization —
         # the AI planner, the frontend, the Phase 14 scheduler (via
         # app.jobs.service.prepare_job + this same is_executable check, see
         # app/scheduling/ticker.py), and every other caller all funnel
@@ -45,6 +46,27 @@ async def create_job(request: JobCreateRequest, db: AsyncSession = Depends(get_d
         project_id = target.project_id
         target_id = target.id
         target_address = target.address
+    else:
+        # Phase 23 -- a free-text target (no registered Asset) used to skip
+        # authorization entirely: anyone with API access could point any
+        # allow-listed tool at an arbitrary internet host with zero policy
+        # check, even though the exact same string typed into "New Asset"
+        # would have been classified UNKNOWN and blocked. Free-text targets
+        # are kept (JobCreateRequest documents them as ad-hoc quick scans and
+        # the Tools page has a real UI toggle for them) but now go through
+        # the same classification an Asset gets at creation time
+        # (infer_default_authorization) -- anything that isn't confidently
+        # local/lab is UNKNOWN and refused here too, never silently allowed.
+        inferred_status = infer_default_authorization(target_address, None, None)
+        if not is_status_executable(inferred_status):
+            raise HTTPException(
+                status_code=403,
+                detail=(
+                    f"target '{target_address}' is not a recognized local/lab address "
+                    f"(inferred authorization status: {inferred_status.value}); "
+                    "register it as an Asset and set its authorization_status to run jobs against it"
+                ),
+            )
 
     try:
         prepared = prepare_job(request.tool, request.profile, request.options, target_address, request.timeout)
@@ -63,8 +85,18 @@ async def create_job(request: JobCreateRequest, db: AsyncSession = Depends(get_d
         status=JobStatus.QUEUED,
     )
     db.add(job)
-    await db.commit()
-    await db.refresh(job)
+    # Phase 23 -- flush (not commit) before enqueue, matching the pattern
+    # already used by app/ai/orchestrator.py and app/chains/service.py: if
+    # enqueue() raises or the process crashes between here and commit(), the
+    # transaction rolls back and this Job row never durably exists -- the
+    # RQ job that *was* successfully handed to Redis just no-ops when picked
+    # up (execute_job() already handles `job is None` as a safe return, see
+    # app/jobs/tasks.py). The alternative order (commit, then enqueue) risks
+    # the opposite and worse failure mode: a Job durably QUEUED forever with
+    # no RQ job behind it, silently stuck -- see app/jobs/reconciliation.py
+    # for the sweep that catches that failure mode regardless of ordering
+    # (e.g. Redis itself losing the job independently of this code path).
+    await db.flush()
 
     queue = get_queue()
     # RQ's own job_timeout defaults to 180s independently of the tool's own
@@ -84,6 +116,7 @@ async def create_job(request: JobCreateRequest, db: AsyncSession = Depends(get_d
         job_timeout=prepared.effective_timeout + 30,
     )
 
+    await db.commit()
     return job
 
 

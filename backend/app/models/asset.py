@@ -51,7 +51,10 @@ class Asset(Base):
     __tablename__ = "assets"
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    project_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("projects.id"), nullable=False)
+    # Phase 23 -- indexed: filtered/joined constantly (project scoping on
+    # nearly every Asset list/detail query, AI Memory, the Security Graph)
+    # with no supporting index.
+    project_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("projects.id"), nullable=False, index=True)
 
     name: Mapped[str] = mapped_column(String(256), nullable=False)
     hostname: Mapped[str | None] = mapped_column(String(512), nullable=True)

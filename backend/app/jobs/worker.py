@@ -1,10 +1,12 @@
 import logging
+from datetime import timedelta
 
 from rq import Worker
 
 from app.core.config import get_settings
 from app.intel.sync import start_intel_sync_thread
 from app.jobs.queue import get_redis_connection
+from app.jobs.reconciliation import start_reconciliation_thread
 from app.scheduling.ticker import start_scheduler_thread
 
 if __name__ == "__main__":
@@ -23,6 +25,14 @@ if __name__ == "__main__":
     # app/intel/sync.py::start_intel_sync_thread for why it doesn't reuse
     # ScheduledJob).
     start_intel_sync_thread(get_settings().intel_sync_interval_seconds)
+
+    # Phase 23 -- same pattern again: a Job stuck at QUEUED/RUNNING with no
+    # corresponding RQ entry left in Redis (Redis restart, worker crash
+    # mid-execution) is otherwise invisible and stays stuck forever.
+    start_reconciliation_thread(
+        get_settings().reconciliation_poll_interval_seconds,
+        stuck_after=timedelta(seconds=get_settings().reconciliation_stuck_after_seconds),
+    )
 
     connection = get_redis_connection()
     worker = Worker(["default"], connection=connection)

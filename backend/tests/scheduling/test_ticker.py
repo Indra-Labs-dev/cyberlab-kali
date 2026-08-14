@@ -1,8 +1,8 @@
+import threading
 from datetime import datetime, timedelta, timezone
 from unittest.mock import MagicMock, patch
 
 from httpx import ASGITransport, AsyncClient
-from sqlalchemy import select
 
 from app.db.sync_session import get_sync_session
 from app.main import app
@@ -116,31 +116,64 @@ async def test_claiming_twice_immediately_does_not_double_claim():
 
 
 async def test_concurrent_claim_skip_locked_prevents_double_claim():
-    """Two real, separate DB sessions racing to claim the same due row --
-    FOR UPDATE SKIP LOCKED must give it to exactly one, never block/duplicate,
-    the Postgres-native reservation the spec asks for instead of a Redis lock."""
+    """Phase 23 -- rewritten to call the real production function
+    (claim_due_schedules(), not a reimplementation of its query) from two
+    real threads/sessions. If someone ever removed
+    `.with_for_update(skip_locked=True)` from the real function, the old
+    version of this test (a hand-copied query) would keep passing -- this
+    one would not, since it exercises the actual code.
+
+    Unlike the blocking `SELECT ... FOR UPDATE` pattern used for Mission/
+    Chain advancement elsewhere in this suite, SKIP LOCKED is explicitly
+    non-blocking by design (see claim_due_schedules()'s own docstring): a
+    second caller racing for an already-locked row must never wait for it,
+    it must simply not see it and return empty-handed. So the assertion
+    here is the opposite shape from the Mission/Chain tests: thread2's call
+    must complete immediately (not block) AND come back with zero claimed
+    rows (not double-claim) while thread1's transaction is still open.
+    """
     _, schedule_id = await _make_authorized_schedule()
     _force_due(schedule_id)
 
-    now = datetime.now(timezone.utc)
-    stmt = (
-        select(ScheduledJob)
-        .where(ScheduledJob.status == ScheduledJobStatus.ACTIVE, ScheduledJob.next_run_at <= now)
-        .with_for_update(skip_locked=True)
-    )
+    started = threading.Event()
+    proceed = threading.Event()
+    results: dict[str, list] = {}
 
-    session1 = get_sync_session()
+    def call_claim_thread1() -> None:
+        session = get_sync_session()
+        real_commit = session.commit
+
+        def blocking_commit(*args, **kwargs):
+            started.set()
+            assert proceed.wait(timeout=5), "test held up thread1 too long"
+            return real_commit(*args, **kwargs)
+
+        session.commit = blocking_commit
+        try:
+            results["t1"] = claim_due_schedules(session)
+        finally:
+            session.close()
+
+    t1 = threading.Thread(target=call_claim_thread1)
+    t1.start()
+    assert started.wait(timeout=5), "thread1 never reached commit -- lock not acquired?"
+
+    # thread1's transaction is now open and uncommitted, still holding the
+    # row's lock. A second, real session racing for the same due row here
+    # must return immediately (SKIP LOCKED never blocks) with nothing
+    # claimed (the only due row is locked by thread1).
     session2 = get_sync_session()
     try:
-        claimed1 = list(session1.execute(stmt).scalars())
-        assert len(claimed1) == 1
-        claimed2 = list(session2.execute(stmt).scalars())  # row still locked by session1 (no commit yet)
-        assert len(claimed2) == 0
+        results["t2"] = claim_due_schedules(session2)
     finally:
-        session1.rollback()
-        session1.close()
-        session2.rollback()
         session2.close()
+    assert results["t2"] == [], "SKIP LOCKED must skip the locked row, not double-claim it"
+
+    proceed.set()
+    t1.join(timeout=5)
+
+    assert len(results["t1"]) == 1
+    assert str(results["t1"][0].id) == schedule_id
 
 
 async def test_asset_deleted_disables_schedule_on_next_tick():

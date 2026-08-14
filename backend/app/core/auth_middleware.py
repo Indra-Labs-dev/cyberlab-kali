@@ -9,6 +9,19 @@ from app.core.config import get_settings
 # unauthenticated container healthchecks (see docker-compose.yml).
 _EXEMPT_PATHS = {"/api/health"}
 
+# Phase 23 -- FastAPI's default introspection endpoints. These are NOT under
+# /api, so the original `path.startswith("/api")` gate never covered them:
+# with AUTH_ENABLED=true, GET /api/jobs correctly returned 401 without a
+# token, but GET /openapi.json (the full route/schema map) and the Swagger
+# UI/ReDoc pages that render it were reachable by anyone with network access
+# to the API port -- a real information-disclosure gap on any instance bound
+# beyond localhost (BIND_ADDRESS=0.0.0.0). Guarded the same way as /api/*
+# below, through the same _extract_token()/_reject() path, not a parallel
+# check -- so a developer can still authenticate to Swagger UI exactly like
+# a WebSocket client already does, via ?token=<secret> in the URL (browsers
+# can't attach a custom Authorization header to a plain page navigation).
+_DOCS_PATHS = {"/docs", "/redoc", "/openapi.json"}
+
 
 class BearerTokenAuthMiddleware:
     """Pure ASGI middleware (not BaseHTTPMiddleware) so it can also guard
@@ -26,7 +39,8 @@ class BearerTokenAuthMiddleware:
             return
 
         path = scope.get("path", "")
-        if not path.startswith("/api") or path in _EXEMPT_PATHS:
+        guarded = path.startswith("/api") or path in _DOCS_PATHS
+        if not guarded or path in _EXEMPT_PATHS:
             await self.app(scope, receive, send)
             return
 

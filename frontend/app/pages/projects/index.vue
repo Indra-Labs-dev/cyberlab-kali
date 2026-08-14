@@ -17,6 +17,7 @@ const router = useRouter();
 
 const projects = ref<ProjectSummary[]>([]);
 const loading = ref(true);
+const loadError = ref("");
 const search = ref("");
 const statusFilter = ref<"" | "ACTIVE" | "ARCHIVED">("");
 
@@ -30,12 +31,15 @@ const busy = ref<string | null>(null);
 
 async function loadProjects() {
   loading.value = true;
+  loadError.value = "";
   try {
     const params = new URLSearchParams();
     if (search.value) params.set("search", search.value);
     if (statusFilter.value) params.set("status", statusFilter.value);
     const query = params.toString() ? `?${params.toString()}` : "";
     projects.value = await apiFetch<ProjectSummary[]>(`/api/projects${query}`);
+  } catch (err: any) {
+    loadError.value = err?.data?.detail || "Failed to load projects";
   } finally {
     loading.value = false;
   }
@@ -159,6 +163,10 @@ onMounted(loadProjects);
       </div>
 
       <p v-if="loading" class="text-sm text-slate-600">Loading…</p>
+      <div v-else-if="loadError" class="text-sm text-red-400">
+        <p>{{ loadError }}</p>
+        <button class="mt-2 text-xs text-emerald-400 hover:underline" @click="loadProjects">Retry</button>
+      </div>
       <p v-else-if="projects.length === 0" class="text-sm text-slate-600">
         No projects yet. Click "+ New Project" to create one.
       </p>

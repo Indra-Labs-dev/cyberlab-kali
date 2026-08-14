@@ -289,6 +289,12 @@ nuclei (quick_scan, filtré sur les tags pertinents)
 
 ---
 
+## 7bis. Phase 23 — Security & Execution Hardening (post-roadmap, hors numérotation 13-22)
+
+La Phase 22 ci-dessus était la dernière phase *fonctionnelle* de cette roadmap. Un audit global read-only des Phases 1-22 (6 agents indépendants, chaque finding re-vérifié dans le code/la DB réels, jamais accepté depuis la documentation) a ensuite identifié des correctifs de sécurité/robustesse opérationnelle réels avant d'envisager toute nouvelle roadmap fonctionnelle. Cette Phase 23 les traite — délibérément **pas une nouvelle entrée dans la séquence numérotée 13-22** (aucune fonctionnalité nouvelle, aucun nouveau tool, aucun changement d'autonomie IA, aucune fusion Mission/Chain) : deux bypass P0 réels fermés (documentation API non protégée, autorisation contournable via target texte libre), robustesse opérationnelle P1 (rate limiting, concurrence AI Memory, cohérence commit/enqueue, réconciliation de Jobs orphelins, indexes DB, bug de downgrade Alembic), et durcissement ciblé P2/P3 (fragilités de tests, 5 pages frontend avec chargement primaire silencieux). Voir [phase-23-security-hardening.md](phase-23-security-hardening.md) pour l'architecture complète et [security.md](security.md) pour l'audit de sécurité détaillé.
+
+---
+
 ## 8. Pistes à horizon plus lointain (gardées, mais reformulées)
 
 Ces idées du brouillon original restent valables mais ne doivent être lancées qu'une fois les Tracks A/B/C ci-dessus livrés et *réellement utilisés* — sinon elles seront conçues sans les retours d'usage nécessaires :

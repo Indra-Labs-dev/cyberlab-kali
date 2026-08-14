@@ -35,7 +35,7 @@ L'utilisateur choisit lui-même quelles étapes lancer (`Run` par étape dans `/
 
 ## AI Assistant (chat)
 
-`POST /api/ai/chat` : question/réponse libre, sans capacité d'exécution — le modèle ne peut que répondre en texte, il n'a accès à aucun outil ni à la base de données depuis cet endpoint. Depuis la Phase 19, un `project_id` optionnel enrichit le system prompt avec la mémoire IA du projet (voir plus bas) — toujours single-turn, aucun historique de conversation persisté.
+`POST /api/ai/chat` : question/réponse libre, sans capacité d'exécution — le modèle ne peut que répondre en texte, aucun tool-calling, aucune écriture en base depuis cet endpoint. **Correction Phase 23** : l'affirmation "aucun accès à la base de données" ci-dessus était devenue obsolète dès la Phase 19 sans avoir été corrigée à l'époque — un `project_id` optionnel déclenche bien des lectures réelles (`Project`, `ProjectAISummary`, `AssetChangeEvent`) pour enrichir le system prompt avec la mémoire IA du projet (voir plus bas). Ces lectures restent strictement scopées aux `target_id`/`project_id` explicitement fournis dans la requête — jamais un accès par défaut à un projet non demandé — et aucune écriture n'a lieu. Toujours single-turn, aucun historique de conversation persisté.
 
 ## Missions (Phase 18 — autonomie Niveau 2)
 
@@ -59,3 +59,7 @@ Les questions temporelles ("qu'est-ce qui a changé depuis le dernier audit ?") 
 
 - Pas de mémoire de conversation persistée côté serveur (le contexte du chat vit uniquement dans l'état du frontend) — à revoir avec le modèle `AIConversation`/`AIMessage`, toujours hors de la roadmap numérotée actuelle.
 - Le Mission Planner ne connaît pas encore le contexte Projet/Lab (ces entités n'existent pas encore) ; il ne reçoit que `target` et `goal` en texte libre.
+
+## Phase 23 — durcissement sécurité/exécution : aucun changement d'autonomie IA
+
+La Phase 23 (voir [phase-23-security-hardening.md](phase-23-security-hardening.md)) est une phase de consolidation, pas fonctionnelle : **aucun agent, aucun niveau d'autonomie, aucune capacité IA n'a été modifié**. Le seul changement touchant un chemin partagé avec l'IA est la fermeture du bypass d'autorisation sur `POST /api/jobs` (target texte libre) — Missions/Chains passaient déjà par `is_executable()` à chaque étape et n'étaient donc pas concernées par ce bypass. Un audit indépendant mené avant cette phase a vérifié ligne à ligne que Mission reste Niveau 2 (aucun branchement/retry autonome, aucun choix de cible/outil sans re-validation serveur) et qu'aucun composant IA n'atteint Niveau 3/4 — ce constat reste inchangé après la Phase 23.

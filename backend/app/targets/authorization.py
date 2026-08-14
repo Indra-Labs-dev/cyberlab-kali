@@ -33,8 +33,18 @@ def infer_default_authorization(hostname: str | None, ip_address: str | None, ur
     return AuthorizationStatus.UNKNOWN
 
 
+def is_status_executable(status: AuthorizationStatus) -> bool:
+    """The actual policy predicate, independent of any Target/Asset row --
+    Phase 23: extracted out of is_executable() so a free-text job target
+    (app/api/routes/jobs.py, no registered Asset to load) can be checked
+    against the exact same policy as a registered one, instead of a second,
+    parallel notion of "authorized" ever existing.
+    """
+    return status in EXECUTABLE_STATUSES
+
+
 def is_executable(target: Target) -> bool:
     """UNKNOWN is treated as not authorized for automated actions by default
     (spec requirement) -- the user must explicitly set LAB/AUTHORIZED/LOCAL.
     """
-    return target.authorization_status in EXECUTABLE_STATUSES
+    return is_status_executable(target.authorization_status)

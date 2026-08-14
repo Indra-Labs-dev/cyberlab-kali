@@ -16,7 +16,7 @@ from sqlalchemy import select
 from app.ai.provider import AIProvider
 from app.db.sync_session import get_sync_session
 from app.jobs.tasks import execute_job
-from app.models.asset import Asset, AssetType
+from app.models.asset import Asset, AssetType, AuthorizationStatus
 from app.models.job import Job, JobStatus
 from app.models.project import Project
 from app.models.project_ai_summary import ProjectAISummary
@@ -36,7 +36,20 @@ def _make_project_asset_and_job() -> tuple[str, str]:
         project = Project(id=uuid.uuid4(), name="Memory Integration Fixture")
         session.add(project)
         session.flush()
-        asset = Asset(id=uuid.uuid4(), project_id=project.id, name="kali", hostname="cyberlab-kali", type=AssetType.CONTAINER)
+        # Phase 23: execute_job() now re-verifies is_executable() at
+        # execution time -- a directly-ORM-inserted Asset doesn't go
+        # through infer_default_authorization() the way the real
+        # POST /api/projects/{id}/assets route does, so authorization_status
+        # must be set explicitly here (same fixture gap already found and
+        # fixed for tests/chains/test_service.py in Phase 21).
+        asset = Asset(
+            id=uuid.uuid4(),
+            project_id=project.id,
+            name="kali",
+            hostname="cyberlab-kali",
+            type=AssetType.CONTAINER,
+            authorization_status=AuthorizationStatus.LAB,
+        )
         session.add(asset)
         session.flush()
         job = Job(

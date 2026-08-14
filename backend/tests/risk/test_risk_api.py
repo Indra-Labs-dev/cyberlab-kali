@@ -28,6 +28,20 @@ async def _make_asset(client, criticality="MEDIUM") -> tuple[str, str]:
     return project["id"], asset["id"]
 
 
+def _seed_vulnerability_intel(session, cve: str, **fields) -> None:
+    """Phase 23 -- VulnerabilityIntel.cve is a primary key: get-or-create so
+    this fixture is safe to run repeatedly against this shared,
+    non-recreated test DB. Previously a plain `session.add(...)`, which
+    raised an unhandled IntegrityError on any second run (see
+    tests/risk/test_service.py's identical helper for the same reasoning)."""
+    existing = session.get(VulnerabilityIntel, cve)
+    if existing is None:
+        session.add(VulnerabilityIntel(cve=cve, **fields))
+    else:
+        for key, value in fields.items():
+            setattr(existing, key, value)
+
+
 def _make_scored_finding(asset_id: str, cve_ids: list[str] | None = None, severity: Severity = Severity.HIGH) -> str:
     from app.risk.service import recalculate_finding_risk
 
@@ -61,7 +75,7 @@ async def test_get_finding_risk_detail(client):
     _, asset_id = await _make_asset(client)
     session = get_sync_session()
     try:
-        session.add(VulnerabilityIntel(cve="CVE-2030-11111", cvss_score=8.5, cvss_version="3.1", epss_score=0.4, epss_percentile=0.7))
+        _seed_vulnerability_intel(session, "CVE-2030-11111", cvss_score=8.5, cvss_version="3.1", epss_score=0.4, epss_percentile=0.7)
         session.commit()
     finally:
         session.close()
@@ -95,6 +109,22 @@ async def test_finding_without_cve_still_gets_a_risk_score(client):
 
 
 async def test_finding_with_unknown_cve_no_intelligence_data(client):
+    # Phase 23 -- this test's premise is "this CVE has no intelligence data
+    # at all". Unlike the hardcoded-insert-collision fragility fixed
+    # elsewhere in this file, the risk here is a *different* test's
+    # unscoped sync_nvd_cvss() call (which processes every currently-
+    # unscored CVE across the whole shared test DB, not just its own
+    # fixture's) later giving this CVE a real score -- explicitly clear any
+    # leftover row before asserting freshness, rather than assuming it.
+    session = get_sync_session()
+    try:
+        existing = session.get(VulnerabilityIntel, "CVE-1999-00001")
+        if existing is not None:
+            session.delete(existing)
+            session.commit()
+    finally:
+        session.close()
+
     _, asset_id = await _make_asset(client)
     finding_id = _make_scored_finding(asset_id, cve_ids=["CVE-1999-00001"])
     response = await client.get(f"/api/findings/{finding_id}/risk")
@@ -108,7 +138,7 @@ async def test_asset_risk_summary_counts_by_priority(client):
     _, asset_id = await _make_asset(client, criticality="CRITICAL")
     session = get_sync_session()
     try:
-        session.add(VulnerabilityIntel(cve="CVE-2030-22222", cvss_score=9.8, epss_score=0.9))
+        _seed_vulnerability_intel(session, "CVE-2030-22222", cvss_score=9.8, epss_score=0.9)
         session.commit()
     finally:
         session.close()
@@ -142,7 +172,7 @@ async def test_list_findings_filter_by_kev(client):
     _, asset_id = await _make_asset(client)
     session = get_sync_session()
     try:
-        session.add(VulnerabilityIntel(cve="CVE-2030-33333", cvss_score=9.0))
+        _seed_vulnerability_intel(session, "CVE-2030-33333", cvss_score=9.0)
         _existing = session.get(IntelSyncState, "cisa_kev")
         from datetime import datetime, timezone
 
@@ -175,7 +205,7 @@ async def test_list_findings_sort_by_risk_score_desc(client):
     _, low_asset_id = await _make_asset(client, criticality="LOW")
     session = get_sync_session()
     try:
-        session.add(VulnerabilityIntel(cve="CVE-2030-44444", cvss_score=9.9, epss_score=0.95))
+        _seed_vulnerability_intel(session, "CVE-2030-44444", cvss_score=9.9, epss_score=0.95)
         session.commit()
     finally:
         session.close()
@@ -193,7 +223,7 @@ async def test_list_findings_filter_by_min_risk_score(client):
     _, asset_id = await _make_asset(client, criticality="CRITICAL")
     session = get_sync_session()
     try:
-        session.add(VulnerabilityIntel(cve="CVE-2030-55555", cvss_score=9.9, epss_score=0.95))
+        _seed_vulnerability_intel(session, "CVE-2030-55555", cvss_score=9.9, epss_score=0.95)
         session.commit()
     finally:
         session.close()

@@ -54,12 +54,54 @@ async def test_protected_route_accepts_correct_token_when_auth_enabled(monkeypat
     assert response.status_code == 200
 
 
-async def test_non_api_paths_are_not_guarded(monkeypatch):
+async def test_unrelated_non_api_paths_are_not_guarded(monkeypatch):
     settings = get_settings()
     monkeypatch.setattr(settings, "auth_enabled", True)
     async with await _client() as client:
-        response = await client.get("/docs")
+        response = await client.get("/some-unmounted-path")
     assert response.status_code != 401
+
+
+# --- Phase 23 P0.1: /docs, /redoc, /openapi.json must be guarded too ---
+
+
+@pytest.mark.parametrize("path", ["/docs", "/redoc", "/openapi.json"])
+async def test_docs_paths_rejected_without_token_when_auth_enabled(monkeypatch, path):
+    settings = get_settings()
+    monkeypatch.setattr(settings, "auth_enabled", True)
+    async with await _client() as client:
+        response = await client.get(path)
+    assert response.status_code == 401
+
+
+@pytest.mark.parametrize("path", ["/docs", "/redoc", "/openapi.json"])
+async def test_docs_paths_accept_correct_token_when_auth_enabled(monkeypatch, path):
+    settings = get_settings()
+    monkeypatch.setattr(settings, "auth_enabled", True)
+    async with await _client() as client:
+        response = await client.get(path, headers={"Authorization": f"Bearer {settings.api_secret_key}"})
+    assert response.status_code == 200
+
+
+@pytest.mark.parametrize("path", ["/docs", "/redoc", "/openapi.json"])
+async def test_docs_paths_accept_token_via_query_param_when_auth_enabled(monkeypatch, path):
+    # Same mechanism WebSocket clients already use -- a plain browser
+    # navigation can't attach a custom Authorization header, so Swagger
+    # UI/ReDoc must be reachable the same way: ?token=<secret>.
+    settings = get_settings()
+    monkeypatch.setattr(settings, "auth_enabled", True)
+    async with await _client() as client:
+        response = await client.get(f"{path}?token={settings.api_secret_key}")
+    assert response.status_code == 200
+
+
+@pytest.mark.parametrize("path", ["/docs", "/redoc", "/openapi.json"])
+async def test_docs_paths_reachable_when_auth_disabled(path):
+    settings = get_settings()
+    assert settings.auth_enabled is False
+    async with await _client() as client:
+        response = await client.get(path)
+    assert response.status_code == 200
 
 
 def test_websocket_rejects_missing_token_when_auth_enabled(monkeypatch):

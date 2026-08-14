@@ -67,7 +67,9 @@ class Finding(Base):
     )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    job_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("jobs.id"), nullable=False)
+    # Phase 23 -- indexed: joined/filtered on constantly (report building,
+    # risk recalculation, the Asset detail page) with no supporting index.
+    job_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("jobs.id"), nullable=False, index=True)
     target: Mapped[str] = mapped_column(String(512), nullable=False)
     source_tool: Mapped[str] = mapped_column(String(64), nullable=False)
 

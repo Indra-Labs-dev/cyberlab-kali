@@ -33,16 +33,20 @@ const template = ref<"executive" | "technical" | "evidence_package">("technical"
 const generating = ref(false);
 const generateError = ref("");
 const loading = ref(true);
+const loadError = ref("");
 
 const completedJobs = computed(() => jobs.value.filter((j) => j.status === "SUCCESS" || j.status === "FAILED"));
 
 async function loadAll() {
   loading.value = true;
+  loadError.value = "";
   try {
     [jobs.value, reports.value] = await Promise.all([
       apiFetch<Job[]>("/api/jobs?limit=100"),
       apiFetch<ReportMeta[]>("/api/reports"),
     ]);
+  } catch (err: any) {
+    loadError.value = err?.data?.detail || "Failed to load reports";
   } finally {
     loading.value = false;
   }
@@ -146,6 +150,10 @@ onMounted(loadAll);
       <section class="rounded-lg border border-slate-800 bg-slate-900/40 p-4">
         <h2 class="mb-3 text-sm font-semibold text-slate-300">Past reports</h2>
         <p v-if="loading" class="text-sm text-slate-600">Loading…</p>
+        <div v-else-if="loadError" class="text-sm text-red-400">
+          <p>{{ loadError }}</p>
+          <button class="mt-2 text-xs text-emerald-400 hover:underline" @click="loadAll">Retry</button>
+        </div>
         <p v-else-if="reports.length === 0" class="text-sm text-slate-600">No reports generated yet.</p>
         <div v-else class="space-y-2">
           <div

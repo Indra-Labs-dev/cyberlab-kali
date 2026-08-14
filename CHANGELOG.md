@@ -1,5 +1,42 @@
 # Changelog
 
+## Unreleased — Phase 23 — Security & Execution Hardening
+
+Phase de consolidation (pas fonctionnelle), déclenchée par un audit global post-roadmap des Phases 1-22. Voir [docs/phase-23-security-hardening.md](docs/phase-23-security-hardening.md) pour l'architecture complète.
+
+- **P0 — deux bypass réels fermés** : `/docs`/`/redoc`/`/openapi.json` étaient
+  accessibles sans token même avec `AUTH_ENABLED=true` (confirmé en direct
+  sur une instance réellement exposée au LAN) -- désormais gardés par le
+  même middleware que `/api/*`. `POST /api/jobs` avec une target texte
+  libre contournait entièrement `is_executable()` -- classifiée désormais
+  via `infer_default_authorization()`, refusée si non LAB/LOCAL ;
+  `_execute_job()` re-vérifie aussi l'autorisation juste avant l'exécution
+  réelle de l'outil, fermant la fenêtre TOCTOU pour les 4 créateurs de Job
+  à la fois.
+- **P1 — robustesse opérationnelle** : rate limiting Redis minimal sur les
+  endpoints sensibles (désactivé par défaut) ; `regenerate_project_summary()`
+  (AI Memory) rendu concurrency-safe via un `INSERT ... ON CONFLICT`
+  atomique (preuve : 2 threads réels synchronisés par une
+  `threading.Barrier`) ; stratégie commit/enqueue unifiée
+  (`flush → enqueue → commit`) sur les 4 créateurs de Job ; service de
+  réconciliation minimal (`app/jobs/reconciliation.py`) pour les Jobs
+  orphelins ; indexes manquants ajoutés sur `jobs`/`findings`/`assets`
+  (migration `e5f1a9c7d3b2`) ; bug de downgrade Alembic corrigé sur
+  `6495416ebbf2` (deux bugs distincts trouvés en testant réellement le
+  round-trip complet).
+- **P2/P3** : fixtures de test `VulnerabilityIntel.cve` rendues idempotentes
+  (11+3 sites), test SKIP LOCKED du ticker réécrit pour appeler la vraie
+  fonction de production depuis un vrai thread ; scoping serveur des
+  rapports par projet analysé et documenté comme risque résiduel accepté
+  (non implémenté, `Report.job_ids` peut légitimement couvrir plusieurs
+  projets) ; 5 pages frontend avec chargement primaire silencieux
+  corrigées (catch + Retry, `v-else` de secours).
+- 41 nouveaux tests backend (623 au total), 0 nouveau test frontend requis.
+  Vérifié en conditions réelles (Docker + navigateur) : tous les bypass
+  fermés confirmés en direct, réconciliation testée contre un vrai Job
+  orphelin dans le conteneur worker réel, migration round-trip vérifiée
+  sur la vraie base de dev avec données réelles intactes.
+
 ## Unreleased — Phase 22 — Reports 2.0 & Pentest Workspace
 
 Dernière phase de la roadmap actuelle. Deux volets additifs, aucune réécriture de moteur existant. Voir [docs/phase-22-reports-2-pentest-workspace.md](docs/phase-22-reports-2-pentest-workspace.md) pour l'architecture complète.

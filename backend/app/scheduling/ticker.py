@@ -123,8 +123,12 @@ def process_schedule(session: Session, schedule: ScheduledJob) -> None:
             status=JobStatus.QUEUED,
         )
         session.add(job)
-        session.commit()
-        session.refresh(job)
+        # Phase 23 -- flush (not commit) before enqueue, matching
+        # app/api/routes/jobs.py, app/ai/orchestrator.py, and
+        # app/chains/service.py: see the comment in routes/jobs.py for the
+        # full reasoning on why this ordering, not the reverse, is used
+        # consistently across all 4 Job-creation call sites.
+        session.flush()
 
         queue = get_queue()
         queue.enqueue(

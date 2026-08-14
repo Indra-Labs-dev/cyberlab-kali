@@ -47,6 +47,28 @@ class Settings(BaseSettings):
     # triggers an immediate out-of-band run for testing/on-demand use.
     intel_sync_interval_seconds: int = 86400
 
+    # Phase 23 -- how often the worker's background thread
+    # (app/jobs/reconciliation.py) sweeps for Jobs stuck at QUEUED/RUNNING
+    # with no corresponding RQ entry left in Redis, and how long a Job must
+    # have been stuck before the sweep touches it (well past every tool's
+    # max_timeout -- must never fire against a job still legitimately
+    # running).
+    reconciliation_poll_interval_seconds: int = 300
+    reconciliation_stuck_after_seconds: int = 1800
+
+    # Phase 23 -- minimal Redis-backed rate limiting on sensitive endpoints
+    # (job/chain-run creation, report generation, AI calls). Disabled by
+    # default, same convention as auth_enabled -- opt in alongside
+    # AUTH_ENABLED=true when exposing the instance beyond localhost. One
+    # shared window, per-bucket request caps: fixed-window counters via
+    # Redis INCR/EXPIRE, not a distributed token-bucket system.
+    rate_limit_enabled: bool = False
+    rate_limit_window_seconds: int = 60
+    rate_limit_job_creation_per_window: int = 30
+    rate_limit_chain_run_per_window: int = 20
+    rate_limit_report_generation_per_window: int = 10
+    rate_limit_ai_call_per_window: int = 20
+
     @property
     def cors_origins(self) -> list[str]:
         return [origin.strip() for origin in self.cors_origins_raw.split(",") if origin.strip()]

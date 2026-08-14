@@ -14,19 +14,26 @@ async def client():
 
 
 async def test_create_job_rejects_unknown_tool(client):
-    response = await client.post("/api/jobs", json={"tool": "metasploit", "target": "10.0.0.1"})
+    response = await client.post("/api/jobs", json={"tool": "metasploit", "target": "127.0.0.1"})
     assert response.status_code == 404
 
 
 async def test_create_job_rejects_flag_injection_target(client):
+    # Phase 23: "--script=vuln" isn't a recognized local/lab address, so it's
+    # now rejected by the authorization gate (403) before ever reaching the
+    # Tool Registry's own argument validation -- defense in depth, not a
+    # weakening of the injection defense itself, which stays independently
+    # covered at the unit level by
+    # tests/tools/test_registry.py::test_build_command_rejects_flag_injection_via_target
+    # (exact argv assertions, not just "raises").
     response = await client.post("/api/jobs", json={"tool": "nmap", "target": "--script=vuln"})
-    assert response.status_code == 400
+    assert response.status_code == 403
 
 
 async def test_create_job_rejects_invalid_option(client):
     response = await client.post(
         "/api/jobs",
-        json={"tool": "nmap", "target": "10.0.0.1", "options": {"ports": "80;whoami"}},
+        json={"tool": "nmap", "target": "127.0.0.1", "options": {"ports": "80;whoami"}},
     )
     assert response.status_code == 400
 
@@ -38,14 +45,14 @@ async def test_create_job_valid_enqueues_and_persists(mock_get_queue, client):
 
     response = await client.post(
         "/api/jobs",
-        json={"tool": "nmap", "target": "10.0.0.1", "options": {"ports": "80"}},
+        json={"tool": "nmap", "target": "127.0.0.1", "options": {"ports": "80"}},
     )
     assert response.status_code == 201
     body = response.json()
     assert body["tool"] == "nmap"
-    assert body["target"] == "10.0.0.1"
+    assert body["target"] == "127.0.0.1"
     assert body["status"] == "QUEUED"
-    assert body["params"] == {"ports": "80", "target": "10.0.0.1"}
+    assert body["params"] == {"ports": "80", "target": "127.0.0.1"}
     mock_queue.enqueue.assert_called_once()
 
     job_id = body["id"]
@@ -68,7 +75,7 @@ async def test_create_job_passes_job_timeout_matching_tool_timeout(mock_get_queu
 
     response = await client.post(
         "/api/jobs",
-        json={"tool": "nikto", "target": "http://10.0.0.1", "profile": "basic_web_scan"},
+        json={"tool": "nikto", "target": "http://127.0.0.1", "profile": "basic_web_scan"},
     )
     assert response.status_code == 201
     body = response.json()
@@ -115,6 +122,38 @@ async def test_create_job_rejects_unauthorized_unknown_target(client):
 
     response = await client.post("/api/jobs", json={"tool": "nmap", "target_id": target["id"]})
     assert response.status_code == 403
+
+
+# --- Phase 23 P0.2: free-text target authorization gate ---
+
+
+async def test_create_job_free_text_target_rejects_unrecognized_host(client):
+    # Confirms the bypass is closed: before Phase 23, this reached
+    # prepare_job() and would have queued a real scan against an arbitrary
+    # internet host with zero authorization check.
+    response = await client.post("/api/jobs", json={"tool": "nmap", "target": "example.com"})
+    assert response.status_code == 403
+    assert "not a recognized local/lab address" in response.json()["detail"]
+
+
+async def test_create_job_free_text_target_rejects_arbitrary_ip(client):
+    response = await client.post("/api/jobs", json={"tool": "nmap", "target": "203.0.113.5"})
+    assert response.status_code == 403
+
+
+@patch("app.api.routes.jobs.get_queue")
+async def test_create_job_free_text_target_accepts_recognized_lab_hostname(mock_get_queue, client):
+    mock_get_queue.return_value = MagicMock()
+    response = await client.post("/api/jobs", json={"tool": "nmap", "target": "cyberlab-kali"})
+    assert response.status_code == 201
+    assert response.json()["target"] == "cyberlab-kali"
+
+
+@patch("app.api.routes.jobs.get_queue")
+async def test_create_job_free_text_target_accepts_local_address(mock_get_queue, client):
+    mock_get_queue.return_value = MagicMock()
+    response = await client.post("/api/jobs", json={"tool": "nmap", "target": "localhost"})
+    assert response.status_code == 201
 
 
 @patch("app.api.routes.jobs.get_queue")

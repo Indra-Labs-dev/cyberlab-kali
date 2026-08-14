@@ -10,11 +10,15 @@ interface Job {
 const { apiFetch } = useApi();
 const jobs = ref<Job[]>([]);
 const loading = ref(true);
+const loadError = ref("");
 
 async function loadJobs() {
   loading.value = true;
+  loadError.value = "";
   try {
     jobs.value = await apiFetch<Job[]>("/api/jobs?limit=100");
+  } catch (err: any) {
+    loadError.value = err?.data?.detail || "Failed to load scans";
   } finally {
     loading.value = false;
   }
@@ -33,6 +37,10 @@ onMounted(loadJobs);
 
     <div class="px-8 py-6">
       <p v-if="loading" class="text-sm text-slate-600">Loading…</p>
+      <div v-else-if="loadError" class="text-sm text-red-400">
+        <p>{{ loadError }}</p>
+        <button class="mt-2 text-xs text-emerald-400 hover:underline" @click="loadJobs">Retry</button>
+      </div>
       <p v-else-if="jobs.length === 0" class="text-sm text-slate-600">
         No scans yet. Launch one from the <NuxtLink to="/tools" class="text-emerald-400 hover:underline">Tools</NuxtLink> page.
       </p>

@@ -73,7 +73,7 @@ async def test_ai_planner_step_with_malicious_options_rejected_at_job_creation(c
     # attempt rather than trusting anything AI-originated.
     response = await client.post(
         "/api/jobs",
-        json={"tool": "nmap", "target": "10.0.0.1", "options": {"ports": "80; rm -rf /"}},
+        json={"tool": "nmap", "target": "127.0.0.1", "options": {"ports": "80; rm -rf /"}},
     )
     assert response.status_code == 400
 

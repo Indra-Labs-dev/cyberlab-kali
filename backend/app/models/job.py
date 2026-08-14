@@ -35,18 +35,24 @@ class Job(Base):
     # ON DELETE SET NULL: deleting a Project/Target must never destroy job
     # history. The `target` string above keeps the human-readable record
     # regardless of whether the Target it came from still exists.
+    # Phase 23 -- indexed: the single most-referenced table in the schema
+    # (7 other tables FK into it) had zero secondary indexes despite
+    # project_id/target_id/status all being routine filter columns and
+    # created_at being the standard sort key for job history (GET
+    # /api/jobs, the ticker, reports, the risk service all filter/order on
+    # these). See migration e5f1a9c7d3b2.
     project_id: Mapped[uuid.UUID | None] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("projects.id", ondelete="SET NULL"), nullable=True
+        UUID(as_uuid=True), ForeignKey("projects.id", ondelete="SET NULL"), nullable=True, index=True
     )
     target_id: Mapped[uuid.UUID | None] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("assets.id", ondelete="SET NULL"), nullable=True
+        UUID(as_uuid=True), ForeignKey("assets.id", ondelete="SET NULL"), nullable=True, index=True
     )
     params: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
     status: Mapped[JobStatus] = mapped_column(
-        Enum(JobStatus, name="job_status"), nullable=False, default=JobStatus.QUEUED
+        Enum(JobStatus, name="job_status"), nullable=False, default=JobStatus.QUEUED, index=True
     )
 
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=text("now()"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=text("now()"), index=True)
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 

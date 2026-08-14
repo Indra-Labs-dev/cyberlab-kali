@@ -22,6 +22,7 @@ from app.ai.orchestrator import (
 from app.ai.planner import AIMissionPlanner
 from app.ai.prompts import CHAT_MEMORY_CONTEXT_TEMPLATE, build_tool_catalog_summary
 from app.ai.schemas import AnalysisResult, ChatResponse, MissionPlan, ReportProposal
+from app.core.rate_limit import ai_call_limit
 from app.db.session import get_db
 from app.models.ai_correlation_suggestion import AICorrelationSuggestion, SuggestionStatus
 from app.models.asset import Asset
@@ -101,7 +102,7 @@ class PlanRequest(BaseModel):
         return self
 
 
-@router.post("/plan", response_model=MissionPlan)
+@router.post("/plan", response_model=MissionPlan, dependencies=[Depends(ai_call_limit)])
 async def plan_mission(
     request: PlanRequest, db: AsyncSession = Depends(get_db), provider: OllamaProvider = Depends(get_provider)
 ) -> MissionPlan:
@@ -140,7 +141,7 @@ class ChatRequest(BaseModel):
 _RECENT_CHANGES_IN_CHAT_LIMIT = 20
 
 
-@router.post("/chat", response_model=ChatResponse)
+@router.post("/chat", response_model=ChatResponse, dependencies=[Depends(ai_call_limit)])
 async def chat(
     request: ChatRequest, db: AsyncSession = Depends(get_db), provider: OllamaProvider = Depends(get_provider)
 ) -> ChatResponse:

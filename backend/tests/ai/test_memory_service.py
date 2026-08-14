@@ -16,6 +16,7 @@ exactly, rather than changing the production code to accommodate a
 test-only artifact.
 """
 
+import threading
 import uuid
 from unittest.mock import patch
 
@@ -233,6 +234,70 @@ def test_regenerate_for_job_unknown_job_is_a_no_op():
     # (shouldn't happen in practice) must still be a safe no-op.
     with patch("app.ai.memory.OllamaProvider", return_value=FakeProvider()):
         regenerate_project_summary_for_job(str(uuid.uuid4()))
+
+
+# --- Phase 23 P1.2: concurrent regeneration must not raise IntegrityError ---
+
+
+class _BarrierSyncedProvider(AIProvider):
+    """Blocks on a real threading.Barrier inside generate() so two real
+    threads' regenerate_project_summary() calls reach their final
+    INSERT ... ON CONFLICT write at essentially the same moment -- the
+    actual race window this test needs to exercise, not just two calls
+    that happen to run "concurrently" but never really overlap."""
+
+    def __init__(self, response: str, barrier: threading.Barrier) -> None:
+        self.response = response
+        self.barrier = barrier
+
+    async def generate(self, prompt: str, system: str = "", json_mode: bool = False) -> str:
+        self.barrier.wait(timeout=5)
+        return self.response
+
+
+def test_concurrent_regenerate_creates_exactly_one_row_no_unhandled_integrity_error():
+    """Two real threads calling regenerate_project_summary() for the same
+    brand-new project (no existing row yet -- the actual TOCTOU case: both
+    threads see `existing is None` and both attempt to persist a row for
+    the first time). Before Phase 23 this was a plain read-then-write with
+    no lock and no upsert -- the second writer's session.commit() would
+    raise an unhandled IntegrityError on uq_project_ai_summary_project.
+    """
+    project_id, _asset_id = _make_project_with_asset()
+    barrier = threading.Barrier(2)
+
+    errors: list[BaseException] = []
+    results: list = []
+
+    def call_regenerate(response: str) -> None:
+        try:
+            provider = _BarrierSyncedProvider(response, barrier)
+            results.append(regenerate_project_summary(uuid.UUID(project_id), provider))
+        except BaseException as exc:  # noqa: BLE001 -- must prove NOTHING escapes, not just IntegrityError
+            errors.append(exc)
+
+    t1 = threading.Thread(target=call_regenerate, args=("Summary from thread 1.",))
+    t2 = threading.Thread(target=call_regenerate, args=("Summary from thread 2.",))
+    t1.start()
+    t2.start()
+    t1.join(timeout=10)
+    t2.join(timeout=10)
+
+    assert errors == [], f"unhandled exception(s) in concurrent regeneration: {errors}"
+    assert len(results) == 2
+    assert all(r is not None for r in results)
+
+    session = get_sync_session()
+    try:
+        rows = list(
+            session.execute(
+                select(ProjectAISummary).where(ProjectAISummary.project_id == uuid.UUID(project_id))
+            ).scalars()
+        )
+        assert len(rows) == 1
+        assert rows[0].summary in ("Summary from thread 1.", "Summary from thread 2.")
+    finally:
+        session.close()
 
 
 def test_regenerate_for_job_success_creates_summary_with_provenance():

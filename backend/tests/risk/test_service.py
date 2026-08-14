@@ -43,6 +43,20 @@ def _mark_kev_synced(session) -> None:
     session.commit()
 
 
+def _seed_vulnerability_intel(session, cve: str, **fields) -> None:
+    """Phase 23 -- VulnerabilityIntel.cve is also a primary key: same
+    get-or-create reasoning as _mark_kev_synced above. Previously a plain
+    `session.add(VulnerabilityIntel(cve=..., ...))`, which raised an
+    unhandled IntegrityError on any second run against this shared,
+    non-recreated test DB (each of these CVE ids is fixed/hardcoded)."""
+    existing = session.get(VulnerabilityIntel, cve)
+    if existing is None:
+        session.add(VulnerabilityIntel(cve=cve, **fields))
+    else:
+        for key, value in fields.items():
+            setattr(existing, key, value)
+
+
 def _make_finding(asset_id: str, cve_ids: list[str] | None = None, confidence=Confidence.MEDIUM) -> Finding:
     session = get_sync_session()
     try:
@@ -122,8 +136,8 @@ async def test_build_risk_inputs_picks_worst_cvss_among_multiple_cves():
     _, asset_id = await _make_asset()
     session = get_sync_session()
     try:
-        session.add(VulnerabilityIntel(cve="CVE-2020-0001", cvss_score=4.0))
-        session.add(VulnerabilityIntel(cve="CVE-2020-0002", cvss_score=9.1))
+        _seed_vulnerability_intel(session, "CVE-2020-0001", cvss_score=4.0)
+        _seed_vulnerability_intel(session, "CVE-2020-0002", cvss_score=9.1)
         session.commit()
     finally:
         session.close()
@@ -181,7 +195,7 @@ async def test_recalculate_finding_risk_writes_cache_columns():
     _, asset_id = await _make_asset(criticality="CRITICAL")
     session = get_sync_session()
     try:
-        session.add(VulnerabilityIntel(cve="CVE-2022-0001", cvss_score=9.0, epss_score=0.8))
+        _seed_vulnerability_intel(session, "CVE-2022-0001", cvss_score=9.0, epss_score=0.8)
         session.commit()
     finally:
         session.close()
@@ -221,7 +235,7 @@ async def test_recalculate_findings_for_asset_recomputes_after_criticality_chang
     project_id, asset_id = await _make_asset(criticality="LOW")
     session = get_sync_session()
     try:
-        session.add(VulnerabilityIntel(cve="CVE-2024-0001", cvss_score=8.0))
+        _seed_vulnerability_intel(session, "CVE-2024-0001", cvss_score=8.0)
         session.commit()
     finally:
         session.close()
@@ -253,7 +267,7 @@ async def test_recalculate_findings_for_asset_recomputes_after_criticality_chang
 async def test_seed_cvss_from_tool_never_overwrites_existing_value():
     session = get_sync_session()
     try:
-        session.add(VulnerabilityIntel(cve="CVE-2025-0001", cvss_score=5.0, cvss_source="nvd"))
+        _seed_vulnerability_intel(session, "CVE-2025-0001", cvss_score=5.0, cvss_source="nvd")
         session.commit()
 
         updated = seed_cvss_from_tool(
@@ -273,6 +287,16 @@ async def test_seed_cvss_from_tool_never_overwrites_existing_value():
 async def test_seed_cvss_from_tool_creates_new_row():
     session = get_sync_session()
     try:
+        # Phase 23 -- this test's premise is "no row exists yet for this
+        # CVE" (unlike _seed_vulnerability_intel's callers above, which want
+        # a row present regardless): explicitly clear any leftover row from
+        # a previous run against this shared, non-recreated test DB, rather
+        # than assuming freshness.
+        existing = session.get(VulnerabilityIntel, "CVE-2025-0002")
+        if existing is not None:
+            session.delete(existing)
+            session.commit()
+
         updated = seed_cvss_from_tool(
             session,
             [{"cve": "CVE-2025-0002", "cvss_score": 7.3, "cvss_version": "3.1", "cvss_vector": "CVSS:3.1/y"}],

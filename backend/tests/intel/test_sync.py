@@ -57,6 +57,20 @@ async def _make_finding_with_cve(cve: str) -> str:
         session.close()
 
 
+def _seed_vulnerability_intel(session, cve: str, **fields) -> None:
+    """Phase 23 -- VulnerabilityIntel.cve is a primary key: get-or-create so
+    this fixture is safe to run repeatedly against this shared,
+    non-recreated test DB (same reasoning as tests/risk/test_service.py's
+    identical helper). Previously a plain `session.add(...)`, which raised
+    an unhandled IntegrityError on any second run."""
+    existing = session.get(VulnerabilityIntel, cve)
+    if existing is None:
+        session.add(VulnerabilityIntel(cve=cve, **fields))
+    else:
+        for key, value in fields.items():
+            setattr(existing, key, value)
+
+
 def _get_state(source: str) -> IntelSyncState | None:
     session = get_sync_session()
     try:
@@ -183,7 +197,7 @@ async def test_sync_nvd_cvss_skips_cves_that_already_have_a_score():
     finding_id = await _make_finding_with_cve("CVE-2030-00001")
     session = get_sync_session()
     try:
-        session.add(VulnerabilityIntel(cve="CVE-2030-00001", cvss_score=8.8, cvss_source="nuclei_template"))
+        _seed_vulnerability_intel(session, "CVE-2030-00001", cvss_score=8.8, cvss_source="nuclei_template")
         session.commit()
         # In the real flow (app/jobs/tasks.py::execute_job) a finding's
         # cached risk fields are always recomputed immediately at creation
@@ -211,6 +225,20 @@ async def test_sync_nvd_cvss_skips_cves_that_already_have_a_score():
 async def test_sync_nvd_cvss_fetches_missing_cvss_and_sleeps_between_calls():
     await _make_finding_with_cve("CVE-2031-00001")
     await _make_finding_with_cve("CVE-2031-00002")
+
+    # Phase 23 -- this test's premise is "these CVEs have no CVSS yet"
+    # (that's exactly what makes sync_nvd_cvss() fetch them); clear any
+    # leftover VulnerabilityIntel rows from a previous run against this
+    # shared, non-recreated test DB rather than assuming freshness.
+    session = get_sync_session()
+    try:
+        for cve in ("CVE-2031-00001", "CVE-2031-00002"):
+            existing = session.get(VulnerabilityIntel, cve)
+            if existing is not None:
+                session.delete(existing)
+        session.commit()
+    finally:
+        session.close()
 
     with patch("app.intel.sync.fetch_nvd_cvss") as mock_fetch, patch("app.intel.sync.time.sleep") as mock_sleep:
         mock_fetch.return_value = {"score": 7.2, "version": "3.1", "vector": "CVSS:3.1/x"}

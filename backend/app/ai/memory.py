@@ -38,6 +38,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, TypeVar
 
 from sqlalchemy import func, select
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from app.ai.agents.summary import SummaryAgent
 from app.ai.ollama import OllamaProvider
@@ -139,17 +140,53 @@ def regenerate_project_summary(
         agent = SummaryAgent(provider)
         text = _run_coro(agent.summarize(project.name, assets, severity_counts, recent_changes))
 
-        if existing is not None:
-            existing.summary = text
-            existing.based_on_job_id = based_on_job_id
-            existing.generated_at = _now()
-            row = existing
-        else:
-            row = ProjectAISummary(project_id=project_id, summary=text, based_on_job_id=based_on_job_id)
-            session.add(row)
-
+        # Phase 23 -- the read above (`existing = ...`) is a plain,
+        # unlocked SELECT: it only decides whether to skip the (slow) LLM
+        # call under the cooldown, never gates correctness. The actual
+        # write is a single atomic INSERT ... ON CONFLICT (project_id) DO
+        # UPDATE, so two calls racing past the cooldown check concurrently
+        # (e.g. two Jobs from the same project finishing seconds apart)
+        # can never both attempt a plain INSERT and hit the unique
+        # constraint (uq_project_ai_summary_project) as an unhandled
+        # IntegrityError -- Postgres serializes the two upserts itself,
+        # and exactly one row survives with whichever write committed
+        # last. No SELECT ... FOR UPDATE is needed here (unlike
+        # Mission/ChainRun advancement): those hold a lock across a
+        # multi-statement decision; this is a single, already-atomic
+        # statement.
+        generated_at = _now()
+        stmt = (
+            pg_insert(ProjectAISummary)
+            .values(
+                id=uuid.uuid4(),
+                project_id=project_id,
+                summary=text,
+                based_on_job_id=based_on_job_id,
+                generated_at=generated_at,
+            )
+            .on_conflict_do_update(
+                index_elements=[ProjectAISummary.project_id],
+                set_={
+                    "summary": text,
+                    "based_on_job_id": based_on_job_id,
+                    "generated_at": generated_at,
+                },
+            )
+        )
+        session.execute(stmt)
         session.commit()
-        session.refresh(row)
+
+        # populate_existing=True: `existing` (if not None) is already in
+        # this session's identity map from the read above, with its
+        # pre-write attribute values -- a plain select() would return that
+        # same cached Python object as-is rather than the row this INSERT
+        # ... ON CONFLICT just wrote, since Core-level DML doesn't sync back
+        # to already-loaded ORM instances on its own.
+        row = session.execute(
+            select(ProjectAISummary)
+            .where(ProjectAISummary.project_id == project_id)
+            .execution_options(populate_existing=True)
+        ).scalar_one()
         return row
     finally:
         session.close()

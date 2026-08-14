@@ -14,11 +14,20 @@ from app.jobs.pubsub import publish_job_update
 from app.models.asset import Asset
 from app.models.job import Job, JobStatus
 from app.risk.service import seed_cvss_from_tool
+from app.targets.authorization import is_executable
 from app.tools import registry
 from app.tools.parsers import parse_output
 from app.tools.parsers.nuclei import cvss_hints
 
 logger = logging.getLogger("cyberlab.jobs.tasks")
+
+
+class AuthorizationRevokedError(Exception):
+    """Phase 23 -- raised when a registered Asset's authorization was revoked
+    between Job creation (is_executable() already passed once, at whichever
+    of the 4 creation call sites made this Job) and the worker actually
+    picking it up. Closes that window uniformly for every caller in one
+    place, instead of adding a 5th copy of the same re-check to each one."""
 
 
 def run_tool_job(tool: str, args: list[str], timeout: int = 60) -> dict:
@@ -106,6 +115,26 @@ def _execute_job(job_id: str, tool_name: str, params: dict, timeout: int | None 
         publish_job_update(job_id, {"id": job_id, "status": JobStatus.RUNNING.value})
 
         try:
+            # Phase 23 -- re-verify authorization NOW, right before the tool
+            # actually runs, not just at Job creation. Mission/Chain
+            # advancement already re-check before creating each step's Job
+            # (app/ai/orchestrator.py, app/chains/service.py), but every
+            # creator -- including a single manual POST /api/jobs -- has a
+            # real window between "Job QUEUED" and "worker picks it up",
+            # during which authorization can be revoked via PATCH. Free-text
+            # targets (no target_id) have nothing to re-check: their
+            # classification is a pure function of the string, already
+            # verified at creation (app/api/routes/jobs.py), so it cannot
+            # drift in the meantime the way a mutable Asset row can.
+            if job.target_id is not None:
+                asset = session.get(Asset, job.target_id)
+                if asset is None or not is_executable(asset):
+                    raise AuthorizationRevokedError(
+                        "asset no longer exists"
+                        if asset is None
+                        else f"target authorization status is {asset.authorization_status.value}"
+                    )
+
             tool = registry.get_tool(tool_name)
             args = registry.build_command(tool_name, params)
             effective_timeout = min(timeout or tool.default_timeout, tool.max_timeout)
@@ -199,7 +228,12 @@ def _execute_job(job_id: str, tool_name: str, params: dict, timeout: int | None 
                     "result": job.result,
                 },
             )
-        except (registry.ToolValidationError, registry.ToolNotFoundError, KaliAgentError) as exc:
+        except (
+            registry.ToolValidationError,
+            registry.ToolNotFoundError,
+            KaliAgentError,
+            AuthorizationRevokedError,
+        ) as exc:
             session.refresh(job)
             if job.status == JobStatus.CANCELLED:
                 return

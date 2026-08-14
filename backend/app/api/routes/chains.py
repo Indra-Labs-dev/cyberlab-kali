@@ -12,6 +12,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.chains.service import ChainRunNotFoundError, cancel_chain_run, create_chain_run
+from app.core.rate_limit import chain_run_limit
 from app.db.session import get_db
 from app.models.asset import Asset
 from app.models.mission_template import ChainRun, ChainRunStatus, ChainRunStep, MissionTemplate, MissionTemplateStep
@@ -123,7 +124,7 @@ async def _run_response(db: AsyncSession, run: ChainRun) -> ChainRunResponse:
     )
 
 
-@router.post("/runs", response_model=ChainRunResponse, status_code=201)
+@router.post("/runs", response_model=ChainRunResponse, status_code=201, dependencies=[Depends(chain_run_limit)])
 async def create_run(request: ChainRunCreateRequest, db: AsyncSession = Depends(get_db)) -> ChainRunResponse:
     # Existence pre-checks here give a clear 404 message distinguishing
     # "no such template" from "no such target" -- create_chain_run() itself

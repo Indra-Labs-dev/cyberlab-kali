@@ -71,12 +71,14 @@ const findings = ref<Finding[]>([]);
 const labs = ref<LabInstance[]>([]);
 const reports = ref<ReportMeta[]>([]);
 const loading = ref(true);
+const loadError = ref("");
 const tab = ref<
   "overview" | "assets" | "scans" | "findings" | "timeline" | "labs" | "ai" | "reports" | "graph" | "notes"
 >("overview");
 
 async function loadAll() {
   loading.value = true;
+  loadError.value = "";
   try {
     const [proj, assetList, jbs, fnds, allReports] = await Promise.all([
       apiFetch<ProjectSummary>(`/api/projects/${projectId}`),
@@ -91,6 +93,8 @@ async function loadAll() {
     findings.value = fnds;
     const jobIdSet = new Set(jbs.map((j) => j.id));
     reports.value = allReports.filter((r) => r.job_ids.some((id) => jobIdSet.has(id)));
+  } catch (err: any) {
+    loadError.value = err?.data?.detail || "Failed to load project";
   } finally {
     loading.value = false;
   }
@@ -435,6 +439,11 @@ onMounted(async () => {
           <span v-if="notesError" class="text-xs text-red-400">{{ notesError }}</span>
         </div>
       </div>
+    </div>
+
+    <div v-else class="px-8 py-6 text-sm text-red-400">
+      <p>{{ loadError || "Failed to load this project." }}</p>
+      <button class="mt-2 text-xs text-emerald-400 hover:underline" @click="loadAll">Retry</button>
     </div>
   </div>
 </template>

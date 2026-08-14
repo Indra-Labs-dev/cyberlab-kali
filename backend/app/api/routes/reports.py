@@ -6,6 +6,7 @@ from fastapi.responses import Response
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.rate_limit import report_generation_limit
 from app.db.session import get_db
 from app.models.report import Report
 from app.reports.builder import NoJobsFoundError, build_report_data
@@ -22,7 +23,7 @@ _CONTENT_TYPES = {
 }
 
 
-@router.post("", response_model=ReportMeta, status_code=201)
+@router.post("", response_model=ReportMeta, status_code=201, dependencies=[Depends(report_generation_limit)])
 async def create_report(request: ReportCreateRequest, db: AsyncSession = Depends(get_db)) -> Report:
     try:
         data = await build_report_data(db, request.job_ids, request.title)

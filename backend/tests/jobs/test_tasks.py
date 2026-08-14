@@ -16,7 +16,9 @@ async def _create_queued_job() -> str:
     async with AsyncClient(transport=transport, base_url="http://test") as ac:
         with patch("app.api.routes.jobs.get_queue") as mock_get_queue:
             mock_get_queue.return_value = MagicMock()
-            response = await ac.post("/api/jobs", json={"tool": "nmap", "target": "10.0.0.1"})
+            # 127.0.0.1 classifies as LOCAL (app/targets/authorization.py) so
+            # this free-text job passes the Phase 23 authorization gate.
+            response = await ac.post("/api/jobs", json={"tool": "nmap", "target": "127.0.0.1"})
     assert response.status_code == 201
     return response.json()["id"]
 
@@ -132,5 +134,83 @@ async def test_execute_job_hash_stays_none_on_unexpected_exception():
         job = session.get(Job, job_id)
         assert job.stdout is None
         assert job.evidence_sha256 is None
+    finally:
+        session.close()
+
+
+# --- Phase 23 P0.2: authorization re-verified at execution time ---
+
+
+async def _create_queued_job_for_lab_asset() -> tuple[str, str]:
+    """A real target_id-linked Job against a real, LAB-authorized Asset --
+    unlike _create_queued_job()'s free-text target, this one has a mutable
+    authorization_status that can be revoked after creation."""
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as ac:
+        project = (await ac.post("/api/projects", json={"name": "Revocation Test Project"})).json()
+        asset = (
+            await ac.post(
+                f"/api/projects/{project['id']}/assets",
+                json={"name": "kali", "hostname": "cyberlab-kali", "type": "CONTAINER"},
+            )
+        ).json()
+        assert asset["authorization_status"] == "LAB"
+
+        with patch("app.api.routes.jobs.get_queue") as mock_get_queue:
+            mock_get_queue.return_value = MagicMock()
+            response = await ac.post("/api/jobs", json={"tool": "nmap", "target_id": asset["id"]})
+    assert response.status_code == 201
+    return response.json()["id"], asset["id"]
+
+
+def _revoke_authorization(asset_id: str) -> None:
+    from app.models.asset import Asset, AuthorizationStatus
+
+    session = get_sync_session()
+    try:
+        asset = session.get(Asset, asset_id)
+        asset.authorization_status = AuthorizationStatus.UNKNOWN
+        session.commit()
+    finally:
+        session.close()
+
+
+async def test_execute_job_refuses_when_authorization_revoked_after_creation():
+    """The TOCTOU window this closes: is_executable() passed at Job creation
+    (POST /api/jobs), but authorization is revoked (e.g. PATCH
+    /api/assets/{id}) before the worker actually picks the Job up. The tool
+    must never run against a target that is no longer authorized."""
+    job_id, asset_id = await _create_queued_job_for_lab_asset()
+    _revoke_authorization(asset_id)
+
+    with patch("app.jobs.tasks.run_tool") as mock_run_tool:
+        execute_job(job_id, "nmap", {"target": "cyberlab-kali"}, 60)
+        mock_run_tool.assert_not_called()
+
+    session = get_sync_session()
+    try:
+        job = session.get(Job, job_id)
+        assert job.status == JobStatus.FAILED
+        assert "authorization status is UNKNOWN" in job.error
+        assert job.stdout is None
+        assert job.evidence_sha256 is None
+    finally:
+        session.close()
+
+
+async def test_execute_job_still_runs_when_authorization_remains_valid():
+    """Non-regression: the new re-check must not refuse a Job whose
+    authorization is still valid at execution time -- this is the ordinary,
+    overwhelmingly common case."""
+    job_id, _asset_id = await _create_queued_job_for_lab_asset()
+
+    with patch("app.jobs.tasks.run_tool", return_value={"stdout": "ok", "stderr": "", "exit_code": 0}) as mock_run_tool:
+        execute_job(job_id, "nmap", {"target": "cyberlab-kali"}, 60)
+        mock_run_tool.assert_called_once()
+
+    session = get_sync_session()
+    try:
+        job = session.get(Job, job_id)
+        assert job.status == JobStatus.SUCCESS
     finally:
         session.close()
