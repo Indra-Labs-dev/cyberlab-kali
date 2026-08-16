@@ -153,7 +153,7 @@ async function search() {
         <div class="flex flex-wrap items-center gap-1 text-xs">
           <template v-for="(node, ni) in path.nodes" :key="`${node.type}:${node.id}`">
             <span class="rounded bg-slate-800 px-2 py-1 text-slate-200">{{ node.label }}</span>
-            <span v-if="ni < path.edges.length" class="text-slate-600">→ {{ path.edges[ni].relation }} →</span>
+            <span v-if="ni < path.edges.length" class="text-slate-600">→ {{ path.edges[ni]?.relation }} →</span>
           </template>
         </div>
         <div class="mt-2 space-y-0.5 text-[11px] text-slate-600">
