@@ -26,3 +26,20 @@ export interface GraphResponse {
   nodes: GraphNode[];
   edges: GraphEdge[];
 }
+
+// Phase 24 -- Attack Path Analysis. Mirrors backend/app/schemas/graph.py's
+// AttackPath/AttackPathsResponse exactly. `disclaimer` is always present
+// on the response, deliberately -- never trimmed on the assumption the UI
+// already shows one of its own.
+export interface AttackPath {
+  hops: number;
+  nodes: GraphNode[];
+  edges: GraphEdge[];
+}
+
+export interface AttackPathsResponse {
+  disclaimer: string;
+  seed: GraphNode;
+  truncated: boolean;
+  paths: AttackPath[];
+}

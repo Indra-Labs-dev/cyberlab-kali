@@ -1,6 +1,9 @@
 <script setup lang="ts">
 import type { GraphSearchResult } from "~/composables/useGraph";
 
+type ViewMode = "neighborhood" | "attack-paths";
+
+const view = ref<ViewMode>("neighborhood");
 const selected = ref<GraphSearchResult | null>(null);
 
 // SecurityGraph fetches once on mount and never watches its own baseUrl
@@ -25,20 +28,43 @@ function onSelect(result: GraphSearchResult) {
     />
 
     <div class="space-y-4 px-8 py-6">
-      <GraphSearchBar @select="onSelect" />
-
-      <EmptyState
-        v-if="!selected"
-        message="Search above for an asset or finding, or enter an exact CVE / service / technology identifier, to load its graph."
-      />
-
-      <div v-else>
-        <p class="mb-2 text-xs text-slate-500">
-          Showing: <span class="text-slate-300">{{ selected.label }}</span>
-          <span class="ml-1 rounded bg-slate-800 px-1.5 py-0.5 text-[10px] text-slate-400">{{ selected.type }}</span>
-        </p>
-        <SecurityGraph :key="baseUrl" :base-url="baseUrl" />
+      <div class="flex gap-1">
+        <button
+          type="button"
+          class="rounded px-3 py-1.5 text-xs font-medium"
+          :class="view === 'neighborhood' ? 'bg-slate-700 text-slate-200' : 'bg-slate-900 text-slate-500'"
+          @click="view = 'neighborhood'"
+        >
+          Neighborhood
+        </button>
+        <button
+          type="button"
+          class="rounded px-3 py-1.5 text-xs font-medium"
+          :class="view === 'attack-paths' ? 'bg-slate-700 text-slate-200' : 'bg-slate-900 text-slate-500'"
+          @click="view = 'attack-paths'"
+        >
+          Attack Paths
+        </button>
       </div>
+
+      <template v-if="view === 'neighborhood'">
+        <GraphSearchBar @select="onSelect" />
+
+        <EmptyState
+          v-if="!selected"
+          message="Search above for an asset or finding, or enter an exact CVE / service / technology identifier, to load its graph."
+        />
+
+        <div v-else>
+          <p class="mb-2 text-xs text-slate-500">
+            Showing: <span class="text-slate-300">{{ selected.label }}</span>
+            <span class="ml-1 rounded bg-slate-800 px-1.5 py-0.5 text-[10px] text-slate-400">{{ selected.type }}</span>
+          </p>
+          <SecurityGraph :key="baseUrl" :base-url="baseUrl" />
+        </div>
+      </template>
+
+      <AttackPaths v-else />
     </div>
   </div>
 </template>

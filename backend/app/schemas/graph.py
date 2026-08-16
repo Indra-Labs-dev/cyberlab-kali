@@ -34,3 +34,20 @@ class GraphRebuildRequest(BaseModel):
 
 class GraphRebuildTriggerResponse(BaseModel):
     status: str
+
+
+# Phase 24 -- Attack Path Analysis. No exploitability/probability score
+# anywhere in this shape, deliberately: `disclaimer` is the one thing every
+# caller (API consumer or frontend) is guaranteed to see alongside the
+# paths themselves.
+class AttackPath(BaseModel):
+    hops: int
+    nodes: list[GraphNodeResponse]
+    edges: list[GraphEdgeResponse]
+
+
+class AttackPathsResponse(BaseModel):
+    disclaimer: str
+    seed: GraphNodeResponse
+    truncated: bool
+    paths: list[AttackPath]

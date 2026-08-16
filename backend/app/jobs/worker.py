@@ -28,10 +28,15 @@ if __name__ == "__main__":
 
     # Phase 23 -- same pattern again: a Job stuck at QUEUED/RUNNING with no
     # corresponding RQ entry left in Redis (Redis restart, worker crash
-    # mid-execution) is otherwise invisible and stays stuck forever.
+    # mid-execution) is otherwise invisible and stays stuck forever. Post-
+    # Phase-23 consolidation (D.2) folded a second, independent sweep into
+    # the same thread: Mission/ChainRun bookkeeping left stalled by a DB
+    # failure between queue.enqueue() succeeding and the orchestrator's own
+    # final commit -- see app/jobs/reconciliation.py's module docstring.
     start_reconciliation_thread(
         get_settings().reconciliation_poll_interval_seconds,
         stuck_after=timedelta(seconds=get_settings().reconciliation_stuck_after_seconds),
+        orchestration_stuck_after=timedelta(seconds=get_settings().reconciliation_orchestration_stuck_after_seconds),
     )
 
     connection = get_redis_connection()

@@ -56,6 +56,16 @@ class Settings(BaseSettings):
     reconciliation_poll_interval_seconds: int = 300
     reconciliation_stuck_after_seconds: int = 1800
 
+    # Post-Phase-23 consolidation (D.2) -- same background thread, a second,
+    # much shorter threshold: Mission/ChainRun bookkeeping left stalled by a
+    # DB failure between queue.enqueue() succeeding and the orchestrator's
+    # own final commit (see app/jobs/reconciliation.py). Unlike the Job
+    # threshold above, this isn't bounding how long a *tool* may run -- a
+    # step that's genuinely still executing is excluded outright, regardless
+    # of age -- it only bounds the brief, normal gap between the
+    # orchestrator's two commits.
+    reconciliation_orchestration_stuck_after_seconds: int = 300
+
     # Phase 23 -- minimal Redis-backed rate limiting on sensitive endpoints
     # (job/chain-run creation, report generation, AI calls). Disabled by
     # default, same convention as auth_enabled -- opt in alongside
@@ -68,6 +78,13 @@ class Settings(BaseSettings):
     rate_limit_chain_run_per_window: int = 20
     rate_limit_report_generation_per_window: int = 10
     rate_limit_ai_call_per_window: int = 20
+
+    # Post-Phase-23 consolidation -- the rate limiter uses its own short,
+    # explicit Redis timeout (not app.jobs.queue.get_redis_connection()'s
+    # shared, timeout-less singleton used by RQ's worker/pubsub) so a Redis
+    # outage fails the dependency fast and deterministically instead of
+    # hanging on the OS TCP default.
+    rate_limit_redis_timeout_seconds: float = 2.0
 
     @property
     def cors_origins(self) -> list[str]:

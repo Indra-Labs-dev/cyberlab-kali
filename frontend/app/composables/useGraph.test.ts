@@ -46,4 +46,28 @@ describe("useGraph", () => {
     await useGraph().loadNode("ASSET", "a1", 2);
     expect(apiFetchMock).toHaveBeenCalledWith("/api/graph/nodes/ASSET/a1?depth=2");
   });
+
+  it("loadAttackPathsToCriticalAssets(type, id, maxHops) calls GET /api/graph/attack-paths/critical/{type}/{id}?max_hops=", async () => {
+    apiFetchMock.mockResolvedValue({ disclaimer: "x", seed: {}, truncated: false, paths: [] });
+    await useGraph().loadAttackPathsToCriticalAssets("ASSET", "a1", 3);
+    expect(apiFetchMock).toHaveBeenCalledWith("/api/graph/attack-paths/critical/ASSET/a1?max_hops=3");
+  });
+
+  it("loadAttackPathsToCriticalAssets defaults max_hops to 4", async () => {
+    apiFetchMock.mockResolvedValue({ disclaimer: "x", seed: {}, truncated: false, paths: [] });
+    await useGraph().loadAttackPathsToCriticalAssets("ASSET", "a1");
+    expect(apiFetchMock).toHaveBeenCalledWith("/api/graph/attack-paths/critical/ASSET/a1?max_hops=4");
+  });
+
+  it("loadAttackPathsBetween(fromType, fromId, toType, toId, maxHops) calls GET /api/graph/attack-paths/between/{...}", async () => {
+    apiFetchMock.mockResolvedValue({ disclaimer: "x", seed: {}, truncated: false, paths: [] });
+    await useGraph().loadAttackPathsBetween("ASSET", "a1", "FINDING", "f1", 2);
+    expect(apiFetchMock).toHaveBeenCalledWith("/api/graph/attack-paths/between/ASSET/a1/FINDING/f1?max_hops=2");
+  });
+
+  it("loadAttackPathsBetween URL-encodes node ids that contain special characters", async () => {
+    apiFetchMock.mockResolvedValue({ disclaimer: "x", seed: {}, truncated: false, paths: [] });
+    await useGraph().loadAttackPathsBetween("SERVICE", "80/tcp", "TECHNOLOGY", "Apache", 4);
+    expect(apiFetchMock).toHaveBeenCalledWith("/api/graph/attack-paths/between/SERVICE/80%2Ftcp/TECHNOLOGY/Apache?max_hops=4");
+  });
 });

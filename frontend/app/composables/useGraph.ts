@@ -1,6 +1,6 @@
 import type { Asset } from "~/types/asset";
 import type { Finding } from "~/types/finding";
-import type { GraphNodeType, GraphResponse } from "~/types/graph";
+import type { AttackPathsResponse, GraphNodeType, GraphResponse } from "~/types/graph";
 import { useApi } from "./useApi";
 
 export interface GraphSearchResult {
@@ -58,5 +58,20 @@ export function useGraph() {
     return apiFetch<GraphResponse>(`/api/graph/nodes/${type}/${encodeURIComponent(id)}?depth=${depth}`);
   }
 
-  return { searchNodes, loadNode };
+  // Phase 24 -- Attack Path Analysis. Both endpoints always return a
+  // `disclaimer` (see AttackPathsResponse) -- callers must render it
+  // alongside the paths, never fetch-and-discard it.
+  function loadAttackPathsToCriticalAssets(type: GraphNodeType, id: string, maxHops = 4) {
+    return apiFetch<AttackPathsResponse>(
+      `/api/graph/attack-paths/critical/${type}/${encodeURIComponent(id)}?max_hops=${maxHops}`
+    );
+  }
+
+  function loadAttackPathsBetween(fromType: GraphNodeType, fromId: string, toType: GraphNodeType, toId: string, maxHops = 4) {
+    return apiFetch<AttackPathsResponse>(
+      `/api/graph/attack-paths/between/${fromType}/${encodeURIComponent(fromId)}/${toType}/${encodeURIComponent(toId)}?max_hops=${maxHops}`
+    );
+  }
+
+  return { searchNodes, loadNode, loadAttackPathsToCriticalAssets, loadAttackPathsBetween };
 }
