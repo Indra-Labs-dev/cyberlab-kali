@@ -2,7 +2,9 @@ import threading
 from datetime import datetime, timedelta, timezone
 from unittest.mock import MagicMock, patch
 
+import pytest
 from httpx import ASGITransport, AsyncClient
+from sqlalchemy import delete
 
 from app.db.sync_session import get_sync_session
 from app.main import app
@@ -10,6 +12,45 @@ from app.models.asset import Asset
 from app.models.job import Job, JobStatus
 from app.models.scheduled_job import MIN_INTERVAL_SECONDS, ScheduledJob, ScheduledJobStatus
 from app.scheduling.ticker import MAX_CONSECUTIVE_FAILURES, claim_due_schedules, run_due_schedules
+
+
+def _wipe_scheduled_jobs() -> None:
+    session = get_sync_session()
+    try:
+        session.execute(delete(ScheduledJob))
+        session.commit()
+    finally:
+        session.close()
+
+
+@pytest.fixture(autouse=True)
+def _isolate_scheduled_jobs_table():
+    """Test-hygiene fix (post-audit, P3) -- not a change to ticker.py.
+
+    claim_due_schedules() (app/scheduling/ticker.py) intentionally scans
+    the *entire* scheduled_jobs table -- that is correct, real production
+    behavior for a single-user local tool, and must not change here. The
+    problem is purely environmental: the shared `cyberlab_test` database
+    is never truncated between pytest invocations within a session (see
+    docs/development.md), so ScheduledJob rows created by this file, by
+    tests/scheduling/test_schedules_api.py, and by tests/test_auth_middleware.py
+    accumulate indefinitely. Because claim_due_schedules() advances
+    next_run_at by a fixed MIN_INTERVAL_SECONDS on every claim, old rows
+    from earlier runs resynchronize into large "all due at once" waves
+    that can exceed its _BATCH_SIZE=50 cap and starve a test's own
+    freshly-created row out of that tick's batch -- root-caused via direct
+    SQL against cyberlab_test during the read-only audit (206+ ACTIVE rows
+    clustering into the same due-minute), see docs/security.md.
+
+    Scoped to this file only: wipes scheduled_jobs before and after each
+    test here, so every ticker test always claims exactly what it itself
+    created, regardless of what earlier test files or earlier runs left
+    behind. Safe to delete freely -- nothing else has a foreign key into
+    scheduled_jobs.
+    """
+    _wipe_scheduled_jobs()
+    yield
+    _wipe_scheduled_jobs()
 
 
 async def _make_authorized_schedule(**overrides) -> tuple[str, str]:
@@ -79,8 +120,7 @@ async def test_run_due_schedules_advances_next_run_at():
 
 async def test_not_due_schedule_is_not_processed():
     # A schedule created far enough in the future is never picked up by a
-    # tick running right now, regardless of whatever else is due in the
-    # (shared, not per-test-isolated) test database.
+    # tick running right now.
     _, schedule_id = await _make_authorized_schedule(interval_seconds=MIN_INTERVAL_SECONDS)
     session = get_sync_session()
     try:
