@@ -15,21 +15,64 @@ logger = logging.getLogger("cyberlab.jobs.kali_client")
 # than its siblings" signal, not blind round-robin.
 _BUSY_KEY_PREFIX = "cyberlab:kali:busy"
 
+# Post-audit fix (Multi-Kali x Plugin System) -- how long a compatibility
+# check against one agent's /health is allowed to take. Short: this runs
+# synchronously before every multi-instance dispatch, and an unreachable
+# agent must not stall job dispatch waiting on it.
+_HEALTH_CHECK_TIMEOUT_SECONDS = 5.0
+
 
 class KaliAgentError(RuntimeError):
     pass
 
 
-def _select_agent_url(urls: list[str]) -> str:
+def _agent_has_tool(url: str, tool: str) -> bool:
+    """Queries one agent's own advertised tool inventory (/health,
+    unauthenticated, already existed for Multi-Kali's own health checks --
+    no new endpoint). An unreachable agent is treated as incompatible, not
+    fatal: it is simply excluded from selection, same spirit as the busy
+    counter being decremented even on failure -- one bad instance must
+    never block dispatch to the others.
+    """
+    try:
+        response = httpx.get(f"{url}/health", timeout=_HEALTH_CHECK_TIMEOUT_SECONDS)
+        response.raise_for_status()
+        tools_available = response.json().get("tools_available", [])
+    except httpx.HTTPError:
+        logger.warning("kali agent unreachable during tool-compatibility check, excluded from selection: %s", url)
+        return False
+    return tool in tools_available
+
+
+def _select_agent_url(urls: list[str], tool: str) -> str:
     """Exactly today's single value when only one URL is configured -- no
     Redis touched at all, zero behavior or performance change for the
     default, non-opted-in case (see Settings.kali_agent_urls).
+
+    Post-audit fix (Multi-Kali x Plugin System): with more than one
+    configured instance, `_select_agent_url` used to assume every instance
+    could run every tool -- true by construction for the 31 curated tools
+    baked into the shared Kali image, but not for Plugin System's
+    EXTRA_ALLOWED_TOOLS, which is set per-container. A plugin tool
+    available on only one instance could previously be routed to another
+    instance that would reject it, a job failure that depended on load at
+    dispatch time rather than on whether the tool could actually run
+    there. Now, only instances that actually advertise the requested tool
+    are eligible; load-based ranking (unchanged) applies among those.
+    Since curated tools are present on every instance by construction,
+    this filter is always a no-op for them -- selection outcome for the
+    31 curated tools is unchanged.
     """
     if len(urls) == 1:
         return urls[0]
+    compatible = [url for url in urls if _agent_has_tool(url, tool)]
+    if not compatible:
+        raise KaliAgentError(f"no configured Kali agent instance has tool {tool!r} available")
+    if len(compatible) == 1:
+        return compatible[0]
     redis = get_redis_connection()
-    counts = redis.mget([f"{_BUSY_KEY_PREFIX}:{url}" for url in urls])
-    ranked = sorted(zip(urls, counts), key=lambda pair: int(pair[1] or 0))
+    counts = redis.mget([f"{_BUSY_KEY_PREFIX}:{url}" for url in compatible])
+    ranked = sorted(zip(compatible, counts), key=lambda pair: int(pair[1] or 0))
     return ranked[0][0]
 
 
@@ -57,7 +100,7 @@ def run_tool(tool: str, args: list[str], timeout: int = 60) -> dict:
     settings = get_settings()
     urls = settings.kali_agent_urls
     multi = len(urls) > 1
-    url = _select_agent_url(urls)
+    url = _select_agent_url(urls, tool)
 
     redis = get_redis_connection() if multi else None
     busy_key = f"{_BUSY_KEY_PREFIX}:{url}"
