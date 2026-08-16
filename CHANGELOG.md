@@ -1,5 +1,62 @@
 # Changelog
 
+## Unreleased — Plugin System (opt-in) — répertoire externe de définitions d'outils
+
+Override explicite du gate §8 de la roadmap (« seulement une fois que 3-4 outils externes réels... ont montré un besoin d'intégration récurrent »). Voir [docs/phase-plugin-system.md](docs/phase-plugin-system.md).
+
+- Généralise le Tool Registry existant (YAML + allowlist Kali) à un second
+  répertoire de définitions, optionnel et contrôlé par l'opérateur
+  (`TOOL_DEFINITIONS_EXTRA_DIR` côté API, `EXTRA_ALLOWED_TOOLS` côté agent
+  Kali) — réutilise intégralement le schéma `ToolDefinition`, le Policy
+  Engine et le pipeline d'exécution (`subprocess` dans le conteneur Kali)
+  existants. Un fichier externe malformé est isolé (loggé, ignoré) sans
+  jamais casser les 31 outils curatés ; une collision de nom avec un outil
+  intégré est rejetée loudly, jamais un shadowing silencieux.
+- N'ajoute délibérément aucun nouveau transport d'exécution : l'intégration
+  de services externes non-CLI (Burp, Wireshark) reste hors périmètre,
+  faute de besoin concret démontré — voir la section "Limites assumées" du
+  document ci-dessus.
+- 6 nouveaux tests backend (691 au total), 9 nouveaux tests agent Kali (22
+  au total). Vérifié en conditions réelles : images reconstruites, outil
+  externe (`echotest`) réellement chargé et exécuté de bout en bout contre
+  un conteneur Kali ad-hoc via une vraie requête HTTP. Aucune migration
+  requise.
+
+## Unreleased — Multi-Kali (opt-in) — parallélisation des scans
+
+Override explicite du gate §8 de la roadmap (« seulement si un utilisateur a réellement besoin de paralléliser des scans longs »). Voir [docs/phase-multi-kali.md](docs/phase-multi-kali.md).
+
+- `docker compose up -d --scale cyberlab-worker=N` fonctionne désormais
+  sans aucun changement de code (RQ distribue déjà nativement entre
+  plusieurs workers) — seul obstacle réel trouvé à l'inspection : le
+  `container_name` fixe du service worker, supprimé. Second service Kali
+  explicitement nommé (`cyberlab-kali-2`, désactivé par défaut, posture de
+  sécurité identique au premier) pour une adressabilité individuelle que
+  `--scale` seul ne peut pas fournir.
+- Sélection **côté worker, par charge réelle** : compteur Redis
+  (`cyberlab:kali:busy:{url}`) incrémenté avant dispatch et décrémenté dans
+  un `finally` (survit à l'échec de l'agent) — jamais un round-robin DNS
+  passif. Une URL unique configurée ne touche jamais Redis (comportement
+  mono-instance strictement inchangé par défaut).
+- 7 nouveaux tests backend (685 au total). Vérifié en conditions réelles
+  avec deux vraies instances Kali et un test de concurrence réel (thread
+  Python + cible réseau injoignable pour forcer un nmap réellement en vol).
+  Aucune migration requise.
+
+## Unreleased — SOC-lite — vue "Findings actifs + changements récents"
+
+Override explicite du gate §8 de la roadmap. Le texte de la roadmap le définit littéralement comme une vue "Findings actifs + changements récents" sur le Dashboard, pas un module Incident/Investigation séparé (qui reste, lui, non levé). Voir [docs/phase-soc-lite.md](docs/phase-soc-lite.md).
+
+- Paramètre additif `active_only` sur `GET /api/findings` (`default=False`,
+  aucun changement de comportement pour les appelants existants) et
+  nouvelle route cross-project `GET /api/asset-changes` — la seule pièce
+  que l'inspection préalable a trouvée réellement absente.
+- Deux nouveaux widgets sur le Dashboard existant
+  (`ActiveFindingsWidget.vue`, `RecentChangesWidget.vue`), lecture seule.
+  Aucune nouvelle table.
+- 13 nouveaux tests backend (678 au total), 9 nouveaux tests frontend (146
+  au total). Aucune migration requise.
+
 ## Unreleased — Phase 23 — Security & Execution Hardening
 
 Phase de consolidation (pas fonctionnelle), déclenchée par un audit global post-roadmap des Phases 1-22. Voir [docs/phase-23-security-hardening.md](docs/phase-23-security-hardening.md) pour l'architecture complète.
