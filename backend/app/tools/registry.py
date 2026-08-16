@@ -1,3 +1,4 @@
+import logging
 import re
 from functools import lru_cache
 from pathlib import Path
@@ -5,7 +6,10 @@ from urllib.parse import urlparse
 
 import yaml
 
+from app.core.config import get_settings
 from app.tools.schema import ArgumentDef, ToolDefinition
+
+logger = logging.getLogger("cyberlab.tools.registry")
 
 DEFINITIONS_DIR = Path(__file__).parent / "definitions"
 
@@ -75,14 +79,47 @@ def _validate_definition_integrity(tool: ToolDefinition) -> None:
             )
 
 
+def _load_one(path: Path) -> ToolDefinition:
+    raw = yaml.safe_load(path.read_text())
+    tool = ToolDefinition.model_validate(raw)
+    _validate_definition_integrity(tool)
+    return tool
+
+
 @lru_cache
 def _load_definitions() -> dict[str, ToolDefinition]:
     definitions: dict[str, ToolDefinition] = {}
+    # Built-in, repo-committed definitions -- a bad file here is a real bug
+    # (never shipped without being tested), so it fails loudly and takes
+    # down the registry, exactly as before Plugin System existed.
     for path in sorted(DEFINITIONS_DIR.glob("*.yaml")):
-        raw = yaml.safe_load(path.read_text())
-        tool = ToolDefinition.model_validate(raw)
-        _validate_definition_integrity(tool)
+        tool = _load_one(path)
         definitions[tool.name] = tool
+
+    # Plugin System (roadmap §8) -- see Settings.tool_definitions_extra_dir.
+    # Unlike the loop above, a malformed file here is isolated (logged,
+    # skipped) rather than crashing the whole registry: these files are
+    # operator-authored and inherently more error-prone, and one typo must
+    # never take the 31 curated tools down with it. A name collision with
+    # a built-in tool is rejected loudly rather than silently shadowing
+    # curated behavior -- an operator renames their file, the curated tool
+    # is never at risk of being overridden by mistake.
+    extra_dir = get_settings().tool_definitions_extra_dir
+    if extra_dir:
+        for path in sorted(Path(extra_dir).glob("*.yaml")):
+            try:
+                tool = _load_one(path)
+            except Exception:
+                logger.exception("plugin tool definition failed to load, skipped: %s", path)
+                continue
+            if tool.name in definitions:
+                logger.error(
+                    "plugin tool definition %s declares name %r, which collides with a built-in tool -- skipped",
+                    path,
+                    tool.name,
+                )
+                continue
+            definitions[tool.name] = tool
     return definitions
 
 

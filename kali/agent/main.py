@@ -77,8 +77,40 @@ CANDIDATE_TOOLS: dict[str, str] = {
     # Terminal, which is unrestricted by design -- see docs/tools.md.
 }
 
+def _parse_extra_tools(raw: str, existing: dict[str, str]) -> dict[str, str]:
+    """Plugin System (roadmap §8) -- an optional, operator-set second
+    source of candidate tools, format "name1:executable1,name2:executable2".
+    Empty input -> empty result, zero effect unless EXTRA_ALLOWED_TOOLS is
+    explicitly set. Malformed entries (no colon, empty name/executable)
+    are skipped individually, never raise -- one operator typo must not
+    prevent the agent from starting. A name already present in `existing`
+    (the curated CANDIDATE_TOOLS) is skipped too: a typo in
+    EXTRA_ALLOWED_TOOLS must never be able to shadow a curated tool's
+    already-resolved path. Every returned entry still goes through the
+    exact same shutil.which() resolution as CANDIDATE_TOOLS below -- a
+    name listed here still never becomes runnable unless the binary is
+    genuinely present in this image (e.g. an operator's own Dockerfile
+    extending cyberlab-kali). See docs/phase-plugin-system.md.
+    """
+    extra: dict[str, str] = {}
+    for entry in raw.split(","):
+        entry = entry.strip()
+        if not entry:
+            continue
+        name, sep, executable = entry.partition(":")
+        name, executable = name.strip(), executable.strip()
+        if not sep or not name or not executable:
+            continue
+        if name in existing:
+            continue
+        extra[name] = executable
+    return extra
+
+
+EXTRA_CANDIDATE_TOOLS: dict[str, str] = _parse_extra_tools(os.environ.get("EXTRA_ALLOWED_TOOLS", ""), CANDIDATE_TOOLS)
+
 ALLOWED_TOOLS: dict[str, str] = {}
-for _name, _executable in CANDIDATE_TOOLS.items():
+for _name, _executable in {**CANDIDATE_TOOLS, **EXTRA_CANDIDATE_TOOLS}.items():
     _path = shutil.which(_executable)
     if _path:
         ALLOWED_TOOLS[_name] = _path

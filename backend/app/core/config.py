@@ -40,6 +40,17 @@ class Settings(BaseSettings):
     # See docs/phase-multi-kali.md.
     kali_agent_urls_raw: str = Field(default="", validation_alias="KALI_AGENT_URLS")
 
+    # Plugin System (roadmap §8) -- optional, operator-controlled second
+    # directory of tool definitions (same ToolDefinition schema, same
+    # Policy Engine / ai_allowed / is_executable() checks as the 31
+    # built-in tools -- see app/tools/registry.py). Empty by default: zero
+    # effect, no extra filesystem access at all, unless explicitly set.
+    # Never a public/open tool marketplace -- docs/tools.md's curated-by-
+    # design philosophy is unchanged; this only lets an operator register
+    # tools *they* installed and vetted, without modifying the CyberLab
+    # repo itself. See docs/phase-plugin-system.md.
+    tool_definitions_extra_dir: str = Field(default="", validation_alias="TOOL_DEFINITIONS_EXTRA_DIR")
+
     labmanager_url: str = "http://cyberlab-labmanager:9100"
     labmanager_token: str = "change-me-in-production"
 
