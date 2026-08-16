@@ -305,6 +305,8 @@ Les 3 pistes restantes du §8 ont ensuite été lancées par un second override 
 
 **SOC-lite** — livré. Le texte de la roadmap le définit littéralement comme une vue "Findings actifs + changements récents", pas un module Incident/Investigation (qui reste, lui, gated par son propre "si un besoin concret apparaît" — non additionnellement levé). Deux widgets sur le Dashboard existant, s'appuyant sur un paramètre additif (`active_only` sur `GET /api/findings`) et une route manquante (`GET /api/asset-changes`, cross-project — la seule pièce que l'inspection a trouvée réellement absente). Aucune nouvelle table. Voir [phase-soc-lite.md](phase-soc-lite.md).
 
+**Multi-Kali (opt-in)** — livré. `docker-compose scale` réellement fonctionnel pour le worker (RQ distribue déjà nativement entre plusieurs processus, aucun code nouveau requis) et pour l'agent Kali (second service explicitement nommé, désactivé par défaut). Sélection **côté worker, par charge réelle** (compteur Redis d'appels en vol, pas un round-robin DNS passif), prouvée par un test concurrent réel contre deux vraies instances. Aucun scheduler distribué, aucun endpoint de charge ajouté à l'agent — l'inspection a révélé qu'un seul worker RQ séquentiel existait avant cette piste, une dépendance interne (pas une modification d'une piste précédente) traitée dans ce même périmètre puisque l'objectif "paralléliser des scans" l'exigeait. Voir [phase-multi-kali.md](phase-multi-kali.md).
+
 ---
 
 ## 8. Pistes à horizon plus lointain (gardées, mais reformulées)

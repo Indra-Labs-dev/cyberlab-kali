@@ -31,6 +31,14 @@ class Settings(BaseSettings):
 
     kali_agent_url: str = "http://cyberlab-kali:9000"
     kali_agent_token: str = "change-me-in-production"
+    # Multi-Kali opt-in (roadmap §8) -- comma-separated list of every Kali
+    # agent instance to dispatch across, replacing kali_agent_url entirely
+    # when set (same "raw string -> list property" shape as
+    # cors_origins_raw/cors_origins above). Empty by default: single-
+    # instance behavior stays byte-identical to before this existed, and
+    # app.jobs.kali_client never touches Redis for selection in that case.
+    # See docs/phase-multi-kali.md.
+    kali_agent_urls_raw: str = Field(default="", validation_alias="KALI_AGENT_URLS")
 
     labmanager_url: str = "http://cyberlab-labmanager:9100"
     labmanager_token: str = "change-me-in-production"
@@ -89,6 +97,11 @@ class Settings(BaseSettings):
     @property
     def cors_origins(self) -> list[str]:
         return [origin.strip() for origin in self.cors_origins_raw.split(",") if origin.strip()]
+
+    @property
+    def kali_agent_urls(self) -> list[str]:
+        urls = [u.strip() for u in self.kali_agent_urls_raw.split(",") if u.strip()]
+        return urls or [self.kali_agent_url]
 
     @property
     def database_url(self) -> str:

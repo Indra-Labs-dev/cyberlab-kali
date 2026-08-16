@@ -94,7 +94,12 @@ services:
     build:
       context: ./backend
       dockerfile: Dockerfile
-    container_name: cyberlab-worker
+    # Multi-Kali opt-in (roadmap §8) -- no fixed container_name: RQ workers
+    # are queue consumers, never addressed by hostname/URL, so `docker
+    # compose up -d --scale cyberlab-worker=N` works with zero code changes
+    # (RQ already distributes work safely across multiple worker processes
+    # consuming the same Redis queue). A fixed name would make Compose
+    # refuse to start more than one. See docs/phase-multi-kali.md.
     restart: unless-stopped
     command: ["python", "-m", "app.jobs.worker"]
     healthcheck:
@@ -120,7 +125,14 @@ services:
     build:
       context: ./kali
       dockerfile: Dockerfile
-    container_name: cyberlab-kali
+    # Multi-Kali opt-in (roadmap §8) -- no fixed container_name so this
+    # service can be scaled or duplicated (see the commented cyberlab-
+    # kali-2 example below). Unlike the worker above, this service DOES
+    # need to be individually addressable (the worker picks a specific
+    # instance by load, see app/jobs/kali_client.py), so real parallelism
+    # across Kali instances needs explicitly-named extra service blocks
+    # like the example below, not `--scale` alone (which would give every
+    # replica the same, non-individually-addressable DNS name).
     restart: unless-stopped
     environment:
       AGENT_TOKEN: ${KALI_AGENT_TOKEN:?KALI_AGENT_TOKEN must be set in .env}
@@ -147,6 +159,40 @@ services:
       - NET_RAW
     mem_limit: 512m
     cpus: "1.0"
+
+  # Multi-Kali opt-in (roadmap §8) -- disabled by default (commented out,
+  # zero effect until uncommented). To enable a second, identical Kali
+  # instance for real parallel scan execution:
+  #   1. Uncomment this block.
+  #   2. Set KALI_AGENT_URLS=http://cyberlab-kali:9000,http://cyberlab-kali-2:9000
+  #      in .env (empty/unset means single-instance, unchanged behavior --
+  #      see Settings.kali_agent_urls in backend/app/core/config.py).
+  #   3. For real concurrency, also scale the worker:
+  #      docker compose up -d --scale cyberlab-worker=2
+  #   Every field below is an exact copy of cyberlab-kali's own security
+  #   posture -- see docs/phase-multi-kali.md for why that must never drift.
+  # cyberlab-kali-2:
+  #   build:
+  #     context: ./kali
+  #     dockerfile: Dockerfile
+  #   restart: unless-stopped
+  #   environment:
+  #     AGENT_TOKEN: ${KALI_AGENT_TOKEN:?KALI_AGENT_TOKEN must be set in .env}
+  #   networks:
+  #     - cyberlab-kali-net
+  #   healthcheck:
+  #     test: ["CMD", "curl", "-f", "http://localhost:9000/health"]
+  #     interval: 15s
+  #     timeout: 5s
+  #     retries: 3
+  #   security_opt:
+  #     - no-new-privileges:true
+  #   cap_drop:
+  #     - ALL
+  #   cap_add:
+  #     - NET_RAW
+  #   mem_limit: 512m
+  #   cpus: "1.0"
 
   # Sits between cyberlab-labmanager and the real docker.sock. Labmanager no
   # longer touches the socket directly — it talks to this proxy over plain

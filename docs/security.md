@@ -423,3 +423,20 @@ Surface ajoutée : paramètre `active_only` sur `GET /api/findings` (existant, a
 | Sur-affirmation | **PASS** | Aucun compteur agrégé nouveau introduit sur le Dashboard — les widgets affichent uniquement les éléments réellement récupérés (max 8), jamais un total qui pourrait induire en erreur sur l'ampleur réelle. |
 
 **Aucune vulnérabilité nouvelle trouvée.** 13 nouveaux tests backend (678 au total, dont les 2-3 échecs `ticker` pré-existants et sans rapport, documentés séparément), 9 nouveaux tests frontend (146 au total). Aucune migration requise.
+
+## Multi-Kali (opt-in) : audit de sécurité
+
+Surface ajoutée : sélection d'agent Kali multi-instance (`app/jobs/kali_client.py`), configuration (`kali_agent_urls_raw`), infrastructure compose (suppression de `container_name` fixe, second service Kali en commentaire). Voir [phase-multi-kali.md](phase-multi-kali.md).
+
+| Catégorie | Statut | Justification |
+|---|---|---|
+| Posture de sécurité du conteneur | **PASS** | Le second service Kali (`cyberlab-kali-2`, commenté par défaut) est une copie exacte de la posture de `cyberlab-kali` : `cap_drop: ALL`, `cap_add: [NET_RAW]` (la seule relaxation, déjà documentée Phase 12), `no-new-privileges`, non-root, pas de `docker.sock`, réseau `cyberlab-kali-net` uniquement, limites mémoire/CPU identiques. Aucune divergence, testée en direct avec un second conteneur réel démarré à partir de la même image. |
+| Authentification agent | **PASS — sans changement** | Chaque instance authentifie toujours via `X-Agent-Token` (`KALI_AGENT_TOKEN`, partagé, inchangé) — pas de nouveau mécanisme, pas de token par instance introduit ni nécessaire (mono-utilisateur, même secret partagé qu'ailleurs). |
+| Rétrocompatibilité | **PASS** | `kali_agent_urls_raw` vide par défaut → comportement mono-instance strictement identique à avant, zéro appel Redis supplémentaire (vérifié explicitement par test : `test_run_tool_single_url_never_touches_redis`). |
+| Fuite de charge/information | **PASS** | Le compteur Redis (`cyberlab:kali:busy:{url}`) ne contient qu'un entier par URL configurée, jamais de détail sur le job/la cible en cours — pas de nouvelle surface d'information sensible. |
+| Disponibilité | **PASS (risque résiduel documenté)** | Le compteur est décrémenté dans un `finally`, y compris en cas d'échec/timeout de l'agent — testé explicitement (`test_run_tool_multi_url_decrements_even_when_the_agent_call_fails`). Si le process worker lui-même est tué avant d'atteindre le `finally` (kill -9, crash dur), le compteur resterait incrémenté à tort ("faussement occupé") jusqu'à expiration naturelle par redémarrage — risque mineur et déjà de même nature que d'autres compteurs Redis non-TTL de l'application ; non traité ici pour rester dans le périmètre minimal, à revisiter si un besoin réel de robustesse apparaît. |
+| Policy Engine Bypass | **PASS — sans changement** | Aucun chemin de cette piste ne touche `is_executable()`/`prepare_job()`/l'autorisation de cible — uniquement le choix de *quelle instance d'exécution* reçoit un Job déjà validé, jamais *si* il doit s'exécuter. |
+
+**Vérification en conditions réelles** : deux vraies instances Kali, sélection par charge prouvée par un test de concurrence réel (thread Python + cible réseau injoignable pour forcer un nmap réellement en vol), `docker compose up -d --scale cyberlab-worker=2` confirmé fonctionnel sans changement de code. Environnement restauré à son état par défaut après vérification.
+
+**Aucune vulnérabilité nouvelle trouvée.** 7 nouveaux tests backend (685 au total). Aucune migration requise (uniquement configuration + infrastructure).
