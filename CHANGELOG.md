@@ -57,6 +57,43 @@ Override explicite du gate §8 de la roadmap. Le texte de la roadmap le définit
 - 13 nouveaux tests backend (678 au total), 9 nouveaux tests frontend (146
   au total). Aucune migration requise.
 
+## Unreleased — Phase 24 — Attack Path Analysis (léger)
+
+Première piste de la section 8 de la roadmap lancée avant que son prérequis explicite (Security Graph alimenté par des données réelles pendant plusieurs mois) ne soit rempli -- décision explicite de l'utilisateur. Voir [docs/phase-24-attack-path-analysis.md](docs/phase-24-attack-path-analysis.md).
+
+- Recherche de chemins (`WITH RECURSIVE` sur `graph_edges`, distincte du
+  voisinage `local_graph()` de la Phase 17) selon deux modes : vers tout
+  Asset `CRITICAL`, ou entre deux nœuds explicitement choisis. Bornée en
+  profondeur (`MAX_ATTACK_PATH_HOPS = 4`) et en nombre de chemins retournés
+  (`MAX_ATTACK_PATHS = 20`, troncature signalée, jamais silencieuse).
+- Chaque chemin est présenté explicitement comme une **hypothèse
+  structurelle à vérifier manuellement, jamais une preuve
+  d'exploitabilité** -- aucun score d'exploitabilité/probabilité/confiance
+  nulle part dans la réponse, un bandeau de disclaimer présent sur toute
+  réponse (y compris une liste vide), testé explicitement des deux côtés
+  (backend et frontend).
+- 27 nouveaux tests backend (665 au total), 12 nouveaux tests frontend
+  (137 au total). Aucune migration requise (modèle `graph_edges`/
+  `Asset.criticality` déjà suffisant).
+
+## Unreleased — D.1/D.2 — consolidation post-Phase 23
+
+Non numérotée, même esprit que la Phase 23 : ferme deux findings de robustesse restants identifiés par un post-audit read-only indépendant, avant le lancement de toute nouvelle roadmap fonctionnelle.
+
+- **D.1** — timeout explicite + fail-closed déterministe du rate limiter
+  sous panne Redis (`app/core/rate_limit.py`, `rate_limit_redis_timeout_seconds`) :
+  une panne/latence Redis renvoie désormais un 503 déterministe et rapide
+  plutôt que de dépendre du timeout TCP par défaut de l'OS, prouvé par des
+  scénarios réels d'indisponibilité/timeout Redis.
+- **D.2** — détection et réparation conservatrice des Missions/ChainRuns
+  bloqués par un échec de commit entre `queue.enqueue()` et la validation
+  finale de la transaction (`app/jobs/reconciliation.py::reconcile_stuck_missions`/
+  `reconcile_stuck_chain_runs`) : ré-invoque les fonctions de progression
+  existantes (`advance_mission()`/`advance_chain_run()`) plutôt qu'une
+  mutation d'état ad hoc, prouvé par un scénario réel
+  enqueue-réussit-commit-échoue contre Postgres/Redis réels.
+- Aucune migration requise pour aucun des deux.
+
 ## Unreleased — Phase 23 — Security & Execution Hardening
 
 Phase de consolidation (pas fonctionnelle), déclenchée par un audit global post-roadmap des Phases 1-22. Voir [docs/phase-23-security-hardening.md](docs/phase-23-security-hardening.md) pour l'architecture complète.
