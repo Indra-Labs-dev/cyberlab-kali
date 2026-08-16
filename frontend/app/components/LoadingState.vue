@@ -1,7 +1,11 @@
 <script setup lang="ts">
-withDefaults(defineProps<{ label?: string }>(), { label: "Loading…" });
+withDefaults(defineProps<{ label?: string; lines?: number }>(), { label: "Loading…", lines: 3 });
 </script>
 
 <template>
-  <p class="text-sm text-slate-600"><slot>{{ label }}</slot></p>
+  <div role="status" :aria-label="label">
+    <slot>
+      <UiSkeleton :lines="lines" />
+    </slot>
+  </div>
 </template>

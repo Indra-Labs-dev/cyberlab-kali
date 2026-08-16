@@ -3,5 +3,38 @@
 @tailwind utilities;
 
 html {
-  @apply bg-slate-950 text-slate-100;
+  @apply bg-bg text-slate-100 antialiased;
+}
+
+@layer utilities {
+  /* Used by scrollable nav/list panels (Sidebar, search results, activity
+     popover) so overflow doesn't show a jarring default-width scrollbar. */
+  .scrollbar-thin {
+    scrollbar-width: thin;
+    scrollbar-color: theme("colors.slate.700") transparent;
+  }
+  .scrollbar-thin::-webkit-scrollbar {
+    width: 6px;
+  }
+  .scrollbar-thin::-webkit-scrollbar-thumb {
+    background-color: theme("colors.slate.700");
+    border-radius: 9999px;
+  }
+}
+
+/* Global safety net for the motion pass (§14/§18): `motion-safe:` variants
+   at each animated call site already gate CSS keyframe animations behind
+   this same media query, but this catches anything that doesn't (third-
+   party defaults, animate-ping on PulseIndicator) and also covers
+   transition-based effects (chart draw-in, card hover elevation). JS-driven
+   motion (AnimatedMetric's count-up) checks matchMedia itself instead. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }
