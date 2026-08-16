@@ -86,12 +86,18 @@ async def test_global_asset_changes_empty_for_a_fresh_project_with_no_changes(cl
 
 
 async def test_global_asset_changes_spans_multiple_projects_and_assets(client):
+    """The one test in this file that must genuinely stay unscoped (its
+    whole point is proving no project_id filter is required) -- mitigated
+    against the shared test database's accumulation (see docs/
+    development.md) with the route's own max limit rather than the
+    default, not a full guarantee but a large enough margin in practice.
+    """
     _, asset_a = await _make_asset(client, "Project A")
     _, asset_b = await _make_asset(client, "Project B")
     change_a = _make_change(asset_a)
     change_b = _make_change(asset_b)
 
-    response = await client.get("/api/asset-changes")
+    response = await client.get("/api/asset-changes", params={"limit": 200})
     assert response.status_code == 200
     ids = {c["id"] for c in response.json()}
     assert {change_a, change_b} <= ids
@@ -121,11 +127,11 @@ async def test_global_asset_changes_unknown_project_id_returns_empty_list_not_40
 
 
 async def test_global_asset_changes_filters_by_severity(client):
-    _, asset_id = await _make_asset(client)
+    project_id, asset_id = await _make_asset(client)
     high = _make_change(asset_id, severity=Severity.HIGH)
     low = _make_change(asset_id, severity=Severity.LOW)
 
-    response = await client.get("/api/asset-changes", params={"severity": "HIGH"})
+    response = await client.get("/api/asset-changes", params={"project_id": project_id, "severity": "HIGH"})
     assert response.status_code == 200
     ids = {c["id"] for c in response.json()}
     assert high in ids
@@ -133,11 +139,11 @@ async def test_global_asset_changes_filters_by_severity(client):
 
 
 async def test_global_asset_changes_filters_by_change_type(client):
-    _, asset_id = await _make_asset(client)
+    project_id, asset_id = await _make_asset(client)
     opened = _make_change(asset_id, change_type=ChangeType.PORT_OPENED)
     closed = _make_change(asset_id, change_type=ChangeType.PORT_CLOSED)
 
-    response = await client.get("/api/asset-changes", params={"change_type": "PORT_CLOSED"})
+    response = await client.get("/api/asset-changes", params={"project_id": project_id, "change_type": "PORT_CLOSED"})
     assert response.status_code == 200
     ids = {c["id"] for c in response.json()}
     assert closed in ids
@@ -145,12 +151,18 @@ async def test_global_asset_changes_filters_by_change_type(client):
 
 
 async def test_global_asset_changes_ordered_most_recent_first(client):
-    _, asset_id = await _make_asset(client)
+    """Scoped via project_id -- a bare GET on this genuinely global,
+    unscoped endpoint would compete against however many events the shared
+    test database has accumulated globally (see docs/development.md), and
+    the default limit=50 could push either event out of the page entirely.
+    A freshly created project's own two events are immune to that.
+    """
+    project_id, asset_id = await _make_asset(client)
     now = datetime.now(timezone.utc)
     older = _make_change(asset_id, detected_at=now - timedelta(hours=2))
     newer = _make_change(asset_id, detected_at=now)
 
-    response = await client.get("/api/asset-changes")
+    response = await client.get("/api/asset-changes", params={"project_id": project_id})
     assert response.status_code == 200
     ids = [c["id"] for c in response.json()]
     assert ids.index(newer) < ids.index(older)
@@ -167,12 +179,17 @@ async def test_global_asset_changes_respects_limit(client):
 
 
 async def test_global_asset_changes_before_cursor_paginates(client):
-    _, asset_id = await _make_asset(client)
+    """Scoped via project_id -- same reasoning as the ordering test above:
+    without it, a `before` filter alone could still return >=limit rows
+    from other, unrelated projects and page this test's own `older` event
+    out of the response.
+    """
+    project_id, asset_id = await _make_asset(client)
     now = datetime.now(timezone.utc)
     older = _make_change(asset_id, detected_at=now - timedelta(hours=2))
     newer = _make_change(asset_id, detected_at=now)
 
-    response = await client.get("/api/asset-changes", params={"before": now.isoformat()})
+    response = await client.get("/api/asset-changes", params={"project_id": project_id, "before": now.isoformat()})
     assert response.status_code == 200
     ids = {c["id"] for c in response.json()}
     assert older in ids
