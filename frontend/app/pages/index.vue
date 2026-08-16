@@ -177,5 +177,14 @@ onMounted(() => {
         </ul>
       </div>
     </div>
+
+    <!-- SOC-lite (docs/roadmap.md §8): "Findings actifs + changements
+         récents", the two lists this Dashboard was missing -- both
+         self-contained widgets, own fetch/loading/error state, same
+         pattern as AssetChangeTimeline.vue. -->
+    <div class="grid grid-cols-1 gap-6 px-8 pb-6 lg:grid-cols-2">
+      <ActiveFindingsWidget />
+      <RecentChangesWidget />
+    </div>
   </div>
 </template>

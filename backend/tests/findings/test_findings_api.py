@@ -72,6 +72,59 @@ async def test_list_findings_filters_by_status(client):
     assert new_id not in ids
 
 
+async def test_list_findings_active_only_includes_unresolved_statuses(client):
+    asset_id = await _make_asset(client)
+    new_id = _make_finding(asset_id, status=FindingStatus.NEW)
+    confirmed_id = _make_finding(asset_id, status=FindingStatus.CONFIRMED)
+    in_review_id = _make_finding(asset_id, status=FindingStatus.IN_REVIEW)
+    reopened_id = _make_finding(asset_id, status=FindingStatus.REOPENED)
+
+    response = await client.get("/api/findings", params={"active_only": "true", "target_id": asset_id})
+    assert response.status_code == 200
+    ids = {f["id"] for f in response.json()}
+    assert {new_id, confirmed_id, in_review_id, reopened_id} <= ids
+
+
+async def test_list_findings_active_only_excludes_resolved_statuses(client):
+    asset_id = await _make_asset(client)
+    accepted_id = _make_finding(asset_id, status=FindingStatus.ACCEPTED_RISK)
+    false_positive_id = _make_finding(asset_id, status=FindingStatus.FALSE_POSITIVE)
+    remediated_id = _make_finding(asset_id, status=FindingStatus.REMEDIATED)
+
+    response = await client.get("/api/findings", params={"active_only": "true", "target_id": asset_id})
+    assert response.status_code == 200
+    ids = {f["id"] for f in response.json()}
+    assert ids.isdisjoint({accepted_id, false_positive_id, remediated_id})
+
+
+async def test_list_findings_explicit_status_overrides_active_only(client):
+    """An explicit `status` always wins -- active_only is only a shortcut
+    for when nothing more specific was asked for, never a second, silently
+    conflicting filter."""
+    asset_id = await _make_asset(client)
+    accepted_id = _make_finding(asset_id, status=FindingStatus.ACCEPTED_RISK)
+    new_id = _make_finding(asset_id, status=FindingStatus.NEW)
+
+    response = await client.get(
+        "/api/findings", params={"active_only": "true", "status": "ACCEPTED_RISK", "target_id": asset_id}
+    )
+    assert response.status_code == 200
+    ids = {f["id"] for f in response.json()}
+    assert accepted_id in ids  # explicit status wins even though it's not "active"
+    assert new_id not in ids
+
+
+async def test_list_findings_active_only_defaults_to_false_no_behavior_change(client):
+    asset_id = await _make_asset(client)
+    accepted_id = _make_finding(asset_id, status=FindingStatus.ACCEPTED_RISK)
+    new_id = _make_finding(asset_id, status=FindingStatus.NEW)
+
+    response = await client.get("/api/findings", params={"target_id": asset_id})
+    assert response.status_code == 200
+    ids = {f["id"] for f in response.json()}
+    assert {accepted_id, new_id} <= ids  # unfiltered by default, exactly as before this change
+
+
 async def test_list_findings_filters_by_source_tool(client):
     asset_id = await _make_asset(client)
     nmap_id = _make_finding(asset_id, source_tool="nmap")

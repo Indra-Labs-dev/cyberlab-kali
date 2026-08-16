@@ -409,3 +409,17 @@ Surface ajoutée : `app/graph/queries.py::find_paths_to_critical_assets`/`find_p
 **Vérification en conditions réelles** : les deux routes interrogées en direct (`curl` authentifié) contre la base de dev réelle — chemin trouvé entre l'asset DVWA E2E et sa technologie Apache (arête réellement dérivée par whatweb), zéro chemin critique avant tout changement (honnête, aucun asset `CRITICAL` n'existait), puis `Asset.criticality` basculé à `CRITICAL` sur un asset réel via la route `PATCH` existante pour prouver le cas positif, et immédiatement restauré à `MEDIUM` après vérification — aucune donnée fictive créée, aucun état laissé altéré.
 
 **Aucune vulnérabilité nouvelle trouvée pendant cette phase.** 27 nouveaux tests backend (665 au total, dont 1 échec pré-existant et sans rapport documenté ci-dessous), 12 nouveaux tests frontend (137 au total). Aucune migration requise (modèle `graph_edges`/`Asset.criticality` déjà suffisant).
+
+## SOC-lite : audit de sécurité
+
+Surface ajoutée : paramètre `active_only` sur `GET /api/findings` (existant, additif), nouvelle route `GET /api/asset-changes` (`app/api/routes/schedules.py`), deux widgets frontend en lecture seule. Voir [phase-soc-lite.md](phase-soc-lite.md).
+
+| Catégorie | Statut | Justification |
+|---|---|---|
+| Authorization / IDOR | **PASS — sans changement** | `GET /api/asset-changes` suit exactement le même modèle d'accès que `GET /api/findings` (déjà cross-project, déjà sans filtrage par compte — cohérent avec l'absence de RBAC déjà documentée en Phase 11) : protégée par le même middleware d'authentification que toute l'API. N'introduit aucune nouvelle notion d'accès par ressource. |
+| Fuite de données | **PASS** | `AssetChangeEventResponse` est le même schéma déjà exposé par la route mono-asset existante (Phase 14) — cette phase change uniquement la portée du filtre (`project_id` optionnel au lieu d'`asset_id` obligatoire), aucun nouveau champ. |
+| Rétrocompatibilité | **PASS** | `active_only` est un paramètre additif, `default=False` — testé explicitement (`test_list_findings_active_only_defaults_to_false_no_behavior_change`) : aucun appelant existant n'est affecté. |
+| Injection SQL | **PASS** | Requête SQLAlchemy paramétrée standard (`select().where()`), aucune concaténation de chaîne, même mécanisme que le reste de l'API. |
+| Sur-affirmation | **PASS** | Aucun compteur agrégé nouveau introduit sur le Dashboard — les widgets affichent uniquement les éléments réellement récupérés (max 8), jamais un total qui pourrait induire en erreur sur l'ampleur réelle. |
+
+**Aucune vulnérabilité nouvelle trouvée.** 13 nouveaux tests backend (678 au total, dont les 2-3 échecs `ticker` pré-existants et sans rapport, documentés séparément), 9 nouveaux tests frontend (146 au total). Aucune migration requise.

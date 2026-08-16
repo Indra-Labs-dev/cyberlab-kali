@@ -216,3 +216,36 @@ async def list_asset_changes(
 
     result = await db.execute(stmt)
     return list(result.scalars().all())
+
+
+@router.get("/asset-changes", response_model=list[AssetChangeEventResponse])
+async def list_all_asset_changes(
+    project_id: uuid.UUID | None = Query(default=None),
+    change_type: ChangeType | None = Query(default=None),
+    severity: Severity | None = Query(default=None),
+    limit: int = Query(default=50, ge=1, le=200),
+    before: datetime | None = Query(default=None, description="Only events detected strictly before this timestamp"),
+    db: AsyncSession = Depends(get_db),
+) -> list[AssetChangeEvent]:
+    """SOC-lite -- the cross-project "recent changes" half of the roadmap's
+    "Findings actifs + changements récents" view. `list_asset_changes()`
+    above already covers a single asset; this is the same query pattern
+    already used privately inside POST /api/ai/chat (project-scoped change
+    enrichment) generalized to every asset and made an optional filter
+    rather than a requirement -- no new table, no new model. `project_id`
+    that matches nothing (or doesn't exist) is not a 404: it's a filter on
+    a list endpoint, same convention as GET /api/findings?project_id=.
+    """
+    stmt = select(AssetChangeEvent).join(Asset, AssetChangeEvent.asset_id == Asset.id)
+    if project_id is not None:
+        stmt = stmt.where(Asset.project_id == project_id)
+    if change_type is not None:
+        stmt = stmt.where(AssetChangeEvent.change_type == change_type)
+    if severity is not None:
+        stmt = stmt.where(AssetChangeEvent.severity == severity)
+    if before is not None:
+        stmt = stmt.where(AssetChangeEvent.detected_at < before)
+    stmt = stmt.order_by(AssetChangeEvent.detected_at.desc()).limit(limit)
+
+    result = await db.execute(stmt)
+    return list(result.scalars().all())

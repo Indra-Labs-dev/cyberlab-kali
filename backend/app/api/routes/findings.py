@@ -31,6 +31,18 @@ class FindingSort(str, Enum):
     RISK_ASC = "risk_score_asc"
 
 
+# SOC-lite -- "active" mirrors the Phase 16 lifecycle state machine
+# (app/findings/lifecycle.py::_TRANSITIONS): every status a human hasn't
+# yet resolved one way or another. Deliberately excludes ACCEPTED_RISK/
+# FALSE_POSITIVE/REMEDIATED -- those are resolved outcomes, not silence.
+_ACTIVE_FINDING_STATUSES = (
+    FindingStatus.NEW,
+    FindingStatus.CONFIRMED,
+    FindingStatus.IN_REVIEW,
+    FindingStatus.REOPENED,
+)
+
+
 @router.get("", response_model=list[FindingResponse])
 async def list_findings(
     severity: Severity | None = Query(default=None),
@@ -41,6 +53,9 @@ async def list_findings(
     kev: bool | None = Query(default=None),
     min_risk_score: int | None = Query(default=None, ge=0, le=100),
     status: FindingStatus | None = Query(default=None),
+    active_only: bool = Query(
+        default=False, description="Shortcut for status IN (NEW, CONFIRMED, IN_REVIEW, REOPENED). Ignored if `status` is set."
+    ),
     source_tool: str | None = Query(default=None),
     sort: FindingSort = Query(default=FindingSort.CREATED_DESC),
     limit: int = Query(default=100, ge=1, le=500),
@@ -59,6 +74,8 @@ async def list_findings(
         stmt = stmt.where(Finding.risk_score >= min_risk_score)
     if status is not None:
         stmt = stmt.where(Finding.status == status)
+    elif active_only:
+        stmt = stmt.where(Finding.status.in_(_ACTIVE_FINDING_STATUSES))
     if source_tool is not None:
         stmt = stmt.where(Finding.source_tool == source_tool)
     if project_id is not None or target_id is not None:
