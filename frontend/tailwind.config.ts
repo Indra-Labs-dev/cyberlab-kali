@@ -29,9 +29,20 @@ export default {
         "glow-success": "0 0 0 1px rgba(52,211,153,0.15), 0 0 24px -6px rgba(52,211,153,0.45)",
         "glow-warning": "0 0 0 1px rgba(251,191,36,0.15), 0 0 24px -6px rgba(251,191,36,0.45)",
         "glow-danger": "0 0 0 1px rgba(248,113,113,0.15), 0 0 24px -6px rgba(248,113,113,0.45)",
+        // Punchier, single-layer glow reserved for active/interactive
+        // elements (active nav item, primary buttons) -- distinct from the
+        // passive card `glow-*` tokens above, which stay softer since a
+        // whole card glowing this hard would be "tout qui brille" noise.
+        "glow-neon-accent": "0 0 22px -3px rgba(34,211,238,0.65)",
+        "glow-neon-ai": "0 0 22px -3px rgba(167,139,250,0.65)",
       },
       fontFamily: {
-        sans: ["ui-sans-serif", "system-ui", "-apple-system", "Segoe UI", "Roboto", "sans-serif"],
+        // Rajdhani (self-hosted, see main.css) -- a geometric/technical
+        // body face is a bigger part of the "futuristic command center"
+        // read than any single glow effect. Falls back to the system
+        // stack if the font file hasn't loaded yet.
+        sans: ["Rajdhani", "ui-sans-serif", "system-ui", "-apple-system", "Segoe UI", "Roboto", "sans-serif"],
+        display: ["Orbitron", "ui-sans-serif", "system-ui", "sans-serif"],
         mono: ["ui-monospace", "SFMono-Regular", "Menlo", "Consolas", "monospace"],
       },
       // Motion design tokens (§11-12 of the visual pass): slow, elegant,
@@ -50,6 +61,11 @@ export default {
         shimmerSweep: { "0%": { transform: "translateX(-100%)" }, "100%": { transform: "translateX(100%)" } },
         spinSlow: { from: { transform: "rotate(0deg)" }, to: { transform: "rotate(360deg)" } },
         lightSweep: { "0%, 100%": { backgroundPosition: "-200% 0" }, "50%": { backgroundPosition: "200% 0" } },
+        float: { "0%, 100%": { transform: "translateY(0)" }, "50%": { transform: "translateY(-8px)" } },
+        pingSlow: {
+          "0%": { transform: "scale(0.9)", opacity: "0.9" },
+          "80%, 100%": { transform: "scale(1.5)", opacity: "0" },
+        },
       },
       animation: {
         "fade-slide-up": "fadeSlideUp 0.5s ease-out both",
@@ -58,6 +74,8 @@ export default {
         "shimmer-sweep": "shimmerSweep 1.6s ease-in-out infinite",
         "spin-slow": "spinSlow 120s linear infinite",
         "light-sweep": "lightSweep 8s ease-in-out infinite",
+        float: "float 6s ease-in-out infinite",
+        "ping-slow": "pingSlow 2.4s cubic-bezier(0,0,0.2,1) infinite",
       },
     },
   },

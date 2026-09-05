@@ -13,7 +13,7 @@ import { computed } from "vue";
 
 const props = withDefaults(
   defineProps<{
-    variant?: "primary" | "secondary" | "ghost" | "danger";
+    variant?: "primary" | "secondary" | "ghost" | "danger" | "ai";
     size?: "sm" | "md";
     to?: string;
     type?: "button" | "submit";
@@ -25,10 +25,11 @@ const props = withDefaults(
 const classes = computed(() => [
   "inline-flex items-center justify-center gap-1.5 rounded-md font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-400 disabled:cursor-not-allowed disabled:opacity-50",
   props.size === "sm" ? "px-2.5 py-1 text-xs" : "px-3.5 py-1.5 text-sm",
-  props.variant === "primary" && "bg-accent-500 text-slate-950 hover:bg-accent-400",
+  props.variant === "primary" && "bg-accent-500 text-slate-950 transition-shadow hover:bg-accent-400 hover:shadow-glow-neon-accent",
   props.variant === "secondary" && "border border-slate-700 bg-slate-900/60 text-slate-200 hover:bg-slate-800",
   props.variant === "ghost" && "text-slate-400 hover:bg-slate-800/60 hover:text-slate-200",
   props.variant === "danger" && "bg-danger-500/15 text-danger-400 hover:bg-danger-500/25",
+  props.variant === "ai" && "bg-ai-500 text-slate-950 transition-shadow hover:bg-ai-400 hover:shadow-glow-neon-ai",
 ]);
 </script>
 

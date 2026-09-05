@@ -9,6 +9,7 @@
 // page (recon happens via Tools/Chains/Missions), so a permanently
 // disabled nav item was just confusing.
 import {
+  BrainCircuit,
   FileText,
   FlaskConical,
   FolderKanban,
@@ -122,7 +123,7 @@ function isActive(path: string): boolean {
           class="relative flex items-center gap-3 rounded-md px-3 py-2 text-sm transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-400"
           :class="
             isActive(item.to)
-              ? 'bg-gradient-to-r from-accent-500/20 to-accent-500/[0.03] text-accent-400 before:absolute before:left-0 before:top-1/2 before:h-5 before:w-0.5 before:-translate-y-1/2 before:rounded-full before:bg-accent-400 before:shadow-glow-accent'
+              ? 'bg-gradient-to-r from-accent-500/20 to-accent-500/[0.03] text-accent-400 before:absolute before:left-0 before:top-1/2 before:h-5 before:w-0.5 before:-translate-y-1/2 before:rounded-full before:bg-accent-400 before:shadow-glow-neon-accent'
               : 'text-slate-400 hover:translate-x-0.5 hover:bg-slate-800/60 hover:text-slate-200'
           "
         >
@@ -136,6 +137,19 @@ function isActive(path: string): boolean {
         </NuxtLink>
       </div>
     </nav>
+
+    <!-- AI presence panel -- structural gap vs. the reference (which
+         dedicates a permanent slot to it, not just a nav item). CTA goes
+         to the real /ai route; no fabricated "analysis running" copy. -->
+    <div class="mx-2 mb-3 hidden flex-col items-center gap-2.5 rounded-lg border border-ai-500/20 bg-ai-500/5 p-4 text-center md:flex">
+      <div class="relative grid h-14 w-14 shrink-0 place-items-center rounded-xl border border-ai-500/40 bg-ai-500/10 motion-safe:animate-float">
+        <BrainCircuit class="h-7 w-7 text-ai-400" aria-hidden="true" />
+        <span class="motion-safe:animate-ping-slow absolute inset-0 rounded-xl border border-ai-500/50" aria-hidden="true" />
+      </div>
+      <h3 class="font-display text-sm font-bold text-ai-400">AI CyberLab</h3>
+      <p class="text-xs leading-tight text-slate-500">Your intelligent security assistant</p>
+      <UiButton variant="ai" size="sm" to="/ai" class="w-full">Open AI Assistant</UiButton>
+    </div>
 
     <div class="border-t border-white/5 px-5 py-3 text-xs text-slate-600">Lab / authorized use only</div>
   </aside>

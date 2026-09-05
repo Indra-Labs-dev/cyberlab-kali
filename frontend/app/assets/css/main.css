@@ -2,6 +2,47 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Self-hosted (not linked from fonts.googleapis.com) -- a security-lab tool
+   shouldn't depend on a third-party CDN just to render its own headings,
+   and self-hosting avoids a render-blocking cross-origin request. Orbitron
+   ships one file covering weights 500/700/900 (Google serves the same
+   woff2 for all three -- verified by inspecting its own CSS response). */
+@font-face {
+  font-family: "Orbitron";
+  font-style: normal;
+  font-weight: 500 900;
+  font-display: swap;
+  src: url("/fonts/orbitron-500.woff2") format("woff2");
+}
+@font-face {
+  font-family: "Rajdhani";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("/fonts/rajdhani-400.woff2") format("woff2");
+}
+@font-face {
+  font-family: "Rajdhani";
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url("/fonts/rajdhani-500.woff2") format("woff2");
+}
+@font-face {
+  font-family: "Rajdhani";
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url("/fonts/rajdhani-600.woff2") format("woff2");
+}
+@font-face {
+  font-family: "Rajdhani";
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url("/fonts/rajdhani-700.woff2") format("woff2");
+}
+
 html {
   @apply bg-bg text-slate-100 antialiased;
 }

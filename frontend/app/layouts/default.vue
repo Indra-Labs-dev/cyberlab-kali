@@ -26,9 +26,11 @@ watch(() => route.path, closeSidebar);
 
     <div class="flex min-w-0 flex-1 flex-col">
       <LayoutTopbar :sidebar-open="sidebarOpen" @toggle-sidebar="sidebarOpen = !sidebarOpen" />
-      <main class="min-w-0 flex-1 overflow-y-auto">
+      <main class="min-w-0 flex-1 overflow-y-auto md:pb-14">
         <slot />
       </main>
     </div>
+
+    <LayoutFooter />
   </div>
 </template>

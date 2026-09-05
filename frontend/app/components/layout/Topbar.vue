@@ -5,7 +5,7 @@
 // endpoints) -- no fabricated notification count, no fake user identity:
 // there's no auth/account model in this backend, so the session indicator
 // is a static label, not a fabricated "Admin" persona.
-import { Bell, Menu, Search, Settings, X } from "@lucide/vue";
+import { Bell, Clock, Menu, Search, Settings, X } from "@lucide/vue";
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { useGlobalSearch } from "~/composables/useGlobalSearch";
 import { useRecentActivity } from "~/composables/useRecentActivity";
@@ -77,12 +77,20 @@ const statusTone = computed<"warning" | "success" | "danger">(
   () => ({ checking: "warning", ok: "success", degraded: "danger" })[overallStatus.value] as "warning" | "success" | "danger",
 );
 
+// Real wall-clock time -- no operational meaning, just genuinely live
+// (unlike a hardcoded "14:32:18" screenshot), updated every second.
+const now = ref(new Date());
+let clockInterval: ReturnType<typeof setInterval> | undefined;
+const timeLabel = computed(() => now.value.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit", second: "2-digit" }));
+
 onMounted(() => {
   refreshStatus();
   window.addEventListener("keydown", onGlobalKeydown);
+  clockInterval = setInterval(() => (now.value = new Date()), 1000);
 });
 onBeforeUnmount(() => {
   clearTimeout(debounceHandle);
+  clearInterval(clockInterval);
   window.removeEventListener("keydown", onGlobalKeydown);
 });
 </script>
@@ -145,6 +153,11 @@ onBeforeUnmount(() => {
       <div class="hidden items-center gap-2 rounded-md border border-slate-800 bg-slate-900/40 px-2.5 py-1 text-xs text-slate-400 sm:flex">
         <UiPulseIndicator :tone="statusTone" size="sm" />
         {{ statusLabel }}
+      </div>
+
+      <div class="hidden items-center gap-1.5 text-xs font-medium text-slate-300 lg:flex">
+        <Clock class="h-3.5 w-3.5 text-accent-400" aria-hidden="true" />
+        <span class="tabular-nums">{{ timeLabel }}</span>
       </div>
 
       <div class="hidden h-5 w-px bg-white/10 sm:block" aria-hidden="true" />

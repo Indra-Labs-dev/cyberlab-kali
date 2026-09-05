@@ -8,6 +8,7 @@
 // backed by anything the backend actually returns.
 import { Activity, AlertTriangle, Rocket, Server, ShieldAlert } from "@lucide/vue";
 import { computed, onMounted, reactive, ref } from "vue";
+import { prefersReducedMotion, resolveQualityTier, supportsWebGL } from "~/components/cyber/graphPerformance";
 import type { RadarItem } from "~/components/ui/HeroRadar.vue";
 import { useApi } from "~/composables/useApi";
 import { useSystemStatus } from "~/composables/useSystemStatus";
@@ -31,6 +32,17 @@ interface ToolDef {
 
 const { apiFetch } = useApi();
 const { status, refresh: refreshStatus } = useSystemStatus();
+
+// Real ratio of the four health checks that are currently "ok" -- not a
+// fabricated "99.9% uptime" (no such metric exists anywhere in the
+// backend). "checking" counts as not-yet-healthy rather than healthy,
+// so the gauge doesn't optimistically show 100% before the checks land.
+const systemHealthPercent = computed(() => {
+  const checks = [status.api, status.db, status.kali, status.ai];
+  const healthy = checks.filter((c) => c === "ok").length;
+  return (healthy / checks.length) * 100;
+});
+const systemHealthTone = computed(() => (systemHealthPercent.value === 100 ? "success" : systemHealthPercent.value > 0 ? "warning" : "danger"));
 
 const assets = ref<Asset[]>([]);
 const findings = ref<Finding[]>([]);
@@ -170,6 +182,13 @@ async function loadJobs() {
   }
 }
 
+// Starts as the SSR/hydration-safe 2D fallback (pure SVG, no window access)
+// so there's no hydration mismatch; upgraded to the 3D graph on the client
+// once we actually know the viewport/WebGL/motion situation. Also the
+// target of the 3D component's own `@unavailable` escape hatch if WebGL
+// init fails at runtime despite passing the initial capability check.
+const heroMode = ref<"3d" | "2d">("2d");
+
 onMounted(() => {
   refreshStatus();
   loadJobs();
@@ -177,6 +196,13 @@ onMounted(() => {
   loadAssets();
   loadFindings();
   loadMissions();
+
+  const tier = resolveQualityTier({
+    viewportWidth: window.innerWidth,
+    webglSupported: supportsWebGL(),
+    reducedMotion: prefersReducedMotion(),
+  });
+  heroMode.value = tier === "fallback" ? "2d" : "3d";
 });
 </script>
 
@@ -214,8 +240,18 @@ onMounted(() => {
          image's world-map/globe centerpiece -- see HeroRadar.vue's
          docstring for why a literal map isn't built). -->
     <div class="motion-safe:animate-fade-slide-up grid grid-cols-1 gap-6 px-8 pt-6 lg:grid-cols-3" style="animation-delay: 300ms">
-      <UiCard title="Attack Surface Radar" subtitle="Top-risk findings across every project" glow="accent" interactive class="lg:col-span-2">
+      <UiCard
+        title="Security Graph"
+        subtitle="Real assets, findings & relationships across every project"
+        glow="accent"
+        interactive
+        class="lg:col-span-2"
+      >
+        <template #actions>
+          <UiButton variant="ghost" size="sm" to="/graph">Open full graph →</UiButton>
+        </template>
         <LoadingState v-if="findingsLoading" />
+        <CyberSecurityGraph3D v-else-if="heroMode === '3d'" height="380px" @unavailable="heroMode = '2d'" />
         <div v-else class="flex flex-col items-center gap-4 sm:flex-row sm:justify-center">
           <UiHeroRadar :items="radarItems" :center-value="assets.length" center-label="Assets Monitored" :size="260" />
           <ul class="w-full max-w-xs space-y-1.5 text-sm sm:ml-4">
@@ -292,11 +328,14 @@ onMounted(() => {
     <!-- System / AI / Tools -->
     <div class="motion-safe:animate-fade-slide-up grid grid-cols-1 gap-6 px-8 pt-6 lg:grid-cols-3" style="animation-delay: 420ms">
       <UiCard title="System Status" subtitle="Live health checks" glow="success" interactive>
-        <div class="grid grid-cols-2 gap-3">
-          <StatusTile label="API" :status="status.api" />
-          <StatusTile label="Database" :status="status.db" />
-          <StatusTile label="Kali" :status="status.kali" :detail="status.kaliDetail" />
-          <StatusTile label="AI (Ollama)" :status="status.ai" :detail="status.aiDetail" />
+        <div class="flex items-center gap-4">
+          <div class="grid flex-1 grid-cols-2 gap-3">
+            <StatusTile label="API" :status="status.api" />
+            <StatusTile label="Database" :status="status.db" />
+            <StatusTile label="Kali" :status="status.kali" :detail="status.kaliDetail" />
+            <StatusTile label="AI (Ollama)" :status="status.ai" :detail="status.aiDetail" />
+          </div>
+          <UiRadialGauge :value="systemHealthPercent" :tone="systemHealthTone" label="Healthy" :size="104" class="hidden sm:inline-grid" />
         </div>
       </UiCard>
 

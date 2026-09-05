@@ -1,11 +1,18 @@
 <script setup lang="ts">
 // Ambient command-center backdrop mounted once behind the app shell:
 // three very slow soft glow blobs (transform/opacity only, `motion-safe:`
-// gated), a static technical grid, a faint particle field, and a vignette
-// for depth toward the edges. Fixed + pointer-events-none so it never
-// intercepts clicks or affects layout; -z-10 keeps it strictly behind the
-// Sidebar/Topbar/page surfaces, which are all opaque or semi-transparent
-// enough to let it show through the gaps between cards.
+// gated), a static technical grid, a faint particle field, a world-map
+// texture, and a vignette for depth toward the edges. Fixed +
+// pointer-events-none so it never intercepts clicks or affects layout;
+// -z-10 keeps it strictly behind the Sidebar/Topbar/page surfaces, which
+// are all opaque or semi-transparent enough to let it show through the
+// gaps between cards.
+//
+// The world-map layer (public/textures/world-dots.webp, compressed from
+// templates/4299.jpg, licensed stock) is pure ambience -- it doesn't
+// represent any real geographic/asset data, exactly like the grid and
+// particle layers next to it. Real geo-tagged data would go in the
+// Security Graph, not painted into the backdrop.
 </script>
 
 <template>
@@ -19,6 +26,17 @@
     <div
       class="absolute left-1/2 top-0 h-80 w-80 -translate-x-1/2 rounded-full bg-danger-500/[0.05] blur-[100px] motion-safe:animate-drift"
       style="animation-duration: 28s"
+    />
+
+    <!-- World-map texture: very low opacity, purely atmospheric. -->
+    <div
+      class="absolute inset-0 opacity-[0.06] mix-blend-screen"
+      style="
+        background-image: url('/textures/world-dots.webp');
+        background-position: center 30%;
+        background-repeat: no-repeat;
+        background-size: 140% auto;
+      "
     />
 
     <!-- Technical grid: two scales layered for a subtle parallax-like depth cue, static (no motion cost). -->

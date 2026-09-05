@@ -78,7 +78,7 @@ const rootClasses = computed(() => [
         <component :is="icon" class="h-4 w-4" aria-hidden="true" />
       </span>
     </div>
-    <p class="mt-2 text-2xl font-semibold tabular-nums text-slate-100">
+    <p class="mt-2 font-display text-3xl font-black tabular-nums text-slate-100">
       <UiAnimatedMetric :value="value" />
     </p>
     <p v-if="hint" class="mt-1 text-xs text-slate-500">{{ hint }}</p>
@@ -90,7 +90,7 @@ const rootClasses = computed(() => [
         <component :is="icon" class="h-4 w-4" aria-hidden="true" />
       </span>
     </div>
-    <p class="mt-2 text-2xl font-semibold tabular-nums text-slate-100">
+    <p class="mt-2 font-display text-3xl font-black tabular-nums text-slate-100">
       <UiAnimatedMetric :value="value" />
     </p>
     <p v-if="hint" class="mt-1 text-xs text-slate-500">{{ hint }}</p>

@@ -46,7 +46,9 @@ const glowClass: Record<string, string> = {
   <div
     class="relative overflow-hidden rounded-lg border shadow-lg shadow-black/20 transition-all duration-300 before:pointer-events-none before:absolute before:inset-x-0 before:top-0 before:h-px before:bg-gradient-to-r before:from-transparent before:via-white/10 before:to-transparent"
     :class="[
-      glass ? 'border-slate-700/50 bg-slate-900/30 backdrop-blur-md' : 'border-border bg-surface/40',
+      glass
+        ? 'border-slate-700/50 bg-gradient-to-b from-slate-800/40 to-slate-900/50 backdrop-blur-md'
+        : 'border-border bg-gradient-to-b from-surface-2/40 to-surface/60',
       padded && 'p-4',
       glow !== 'none' && glowClass[glow],
       interactive && 'hover:-translate-y-0.5 hover:border-slate-600',
@@ -60,7 +62,7 @@ const glowClass: Record<string, string> = {
     />
     <div v-if="title || subtitle || $slots.actions" class="relative mb-3 flex items-center justify-between gap-3">
       <div class="min-w-0">
-        <h2 v-if="title" class="truncate text-sm font-semibold text-slate-300">{{ title }}</h2>
+        <h2 v-if="title" class="truncate font-display text-sm font-bold tracking-wide text-slate-200">{{ title }}</h2>
         <p v-if="subtitle" class="mt-0.5 text-xs text-slate-500">{{ subtitle }}</p>
       </div>
       <div v-if="$slots.actions" class="flex shrink-0 items-center gap-2">
